@@ -315,19 +315,24 @@ class Game {
    * shields and reaches every other tank on the map, scaled by distance.
    */
   applyNeutron(x, y, def, owner) {
-    const r = def.radius || 100;
-    // central blast carves terrain and does shield-absorbable damage nearby
-    this.terrain.crater(x, y, r * 0.9);
+    const r = def.radius || 195;
+    // colossal central blast carves a huge crater
+    this.terrain.crater(x, y, r * 0.92);
+    // layered fireball bursts for a bigger, denser detonation core
     FX.explosion(x, y, r);
-    FX.addShake(def.shake || 44);
-    FX.flash(1.7);
-    FX.nukeDim(0.85);
+    FX.explosion(x, y, r * 0.6);
+    FX.addShake(def.shake || 64);
+    FX.flash(2.4);             // brighter initial white-out
+    FX.nukeDim(0.9);
+    FX.ring(x, y, r * 3.2, 1.1, 'rgba(255,255,255,0.95)');
+    FX.ring(x, y, r * 4.4, 1.6, 'rgba(190,255,170,0.8)');
     AudioEngine.explosion(1);
-    // lingering radiation wash + expanding green pulse rings (visual + ambience)
+    // lingering radiation wash, expanding pulse rings, sustained secondary
+    // fireballs and a slow rolling shockwave (visual + ambience)
     this.hazards.push(new NeutronPulse(x, y, this));
 
     const mapDiag = Math.hypot(W, H);
-    const radNear = def.radNear || 55, radFar = def.radFar || 22;
+    const radNear = def.radNear || 90, radFar = def.radFar || 40;
     for (const t of this.tanks) {
       if (!t.alive) continue;
       const d = Utils.dist(x, y, t.x, t.y - 8);

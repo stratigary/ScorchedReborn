@@ -618,28 +618,41 @@ class NeutronPulse {
   constructor(x, y, game) {
     this.kind = 'neutron';
     this.x = x; this.y = y;
-    this.life = 2.4;
+    this.life = 4.2;            // long, lingering detonation
     this.age = 0;
     this.dead = false;
     this._motes = 0;
-    AudioEngine._tone({ type: 'sine', f0: 60, f1: 22, dur: 2.2, gain: 0.3 });
-    AudioEngine._noise({ dur: 2.0, type: 'bandpass', freq: 2600, q: 3, gain: 0.16, f1: 900 });
+    this._burst = 0;
+    AudioEngine._tone({ type: 'sine', f0: 70, f1: 20, dur: 3.6, gain: 0.34 });
+    AudioEngine._noise({ dur: 3.4, type: 'bandpass', freq: 2600, q: 3, gain: 0.18, f1: 700 });
   }
 
   update(dt, game) {
     this.age += dt;
+    // sustained secondary fireballs erupting from the blast core for ~1.2s,
+    // so the explosion keeps roiling rather than popping once
+    this._burst += dt;
+    while (this._burst > 0.09 && this.age < 1.3) {
+      this._burst -= 0.09;
+      const a = Math.random() * TAU;
+      const rr = Utils.rand(20, 150);
+      FX.explosion(this.x + Math.cos(a) * rr, this.y + Math.sin(a) * rr * 0.6, Utils.rand(40, 95));
+      FX.addShake(10);
+    }
     // radioactive fallout drifting down across the map
     this._motes += dt;
-    while (this._motes > 0.015 && this.age < 1.6) {
-      this._motes -= 0.015;
+    while (this._motes > 0.01 && this.age < 2.6) {
+      this._motes -= 0.01;
       FX.spawn({
         x: Utils.rand(0, W), y: Utils.rand(-10, this.y),
-        vx: Utils.rand(-12, 12), vy: Utils.rand(18, 60),
-        life: Utils.rand(0.8, 1.8), size: Utils.rand(1.5, 3),
+        vx: Utils.rand(-14, 14), vy: Utils.rand(18, 65),
+        life: Utils.rand(0.9, 2.0), size: Utils.rand(1.5, 3.5),
         color: Utils.choice(['#7dff5a', '#aaff7a', '#def0a0']),
         grav: 0.04, kind: 'spark',
       });
     }
+    // keep the world dimmed and shaking through the early, brightest phase
+    if (this.age < 1.1) FX.nukeDim(0.85);
     if (this.age >= this.life) this.dead = true;
   }
 
@@ -647,38 +660,40 @@ class NeutronPulse {
     const prog = this.age / this.life;
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    // expanding shockwave-style radiation rings (several, staggered)
-    const maxR = Math.hypot(W, H) * 0.8;
-    for (let i = 0; i < 4; i++) {
-      const rt = Utils.clamp(prog * 1.3 - i * 0.16, 0, 1);
+    // expanding shockwave-style radiation rings (more of them, bigger & slower)
+    const maxR = Math.hypot(W, H) * 1.05;
+    for (let i = 0; i < 6; i++) {
+      const rt = Utils.clamp(prog * 1.15 - i * 0.12, 0, 1);
       if (rt <= 0 || rt >= 1) continue;
       const ease = 1 - (1 - rt) * (1 - rt);
-      ctx.globalAlpha = (1 - rt) * 0.5;
+      ctx.globalAlpha = (1 - rt) * 0.55;
       ctx.strokeStyle = i % 2 ? '#aaff7a' : '#39ff6a';
-      ctx.lineWidth = 2 + (1 - rt) * 7;
+      ctx.lineWidth = 3 + (1 - rt) * 11;
       ctx.beginPath();
       ctx.arc(this.x, this.y, maxR * ease, 0, TAU);
       ctx.stroke();
     }
-    // hot core that flares then fades
-    const coreA = Math.max(0, 1 - prog * 2.2);
+    // huge hot core that flares brilliant white-green then slowly fades
+    const coreA = Math.max(0, 1 - prog * 1.5);
     if (coreA > 0) {
-      const g = ctx.createRadialGradient(this.x, this.y, 4, this.x, this.y, 130);
-      g.addColorStop(0, `rgba(220,255,200,${0.9 * coreA})`);
-      g.addColorStop(0.5, `rgba(90,255,110,${0.5 * coreA})`);
+      const coreR = 130 + 180 * Utils.smoothstep(Math.min(1, prog * 2.2));
+      const g = ctx.createRadialGradient(this.x, this.y, 6, this.x, this.y, coreR);
+      g.addColorStop(0, `rgba(245,255,235,${0.98 * coreA})`);
+      g.addColorStop(0.35, `rgba(190,255,180,${0.8 * coreA})`);
+      g.addColorStop(0.7, `rgba(90,255,110,${0.45 * coreA})`);
       g.addColorStop(1, 'rgba(40,180,60,0)');
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(this.x, this.y, 130, 0, TAU);
+      ctx.arc(this.x, this.y, coreR, 0, TAU);
       ctx.fill();
     }
     ctx.restore();
-    // sickly green wash over the whole field, peaking early
-    const wash = Math.max(0, 0.32 * (1 - prog * 1.4));
+    // sickly green wash over the whole field, strong and slow to fade
+    const wash = Math.max(0, 0.45 * (1 - prog * 1.05));
     if (wash > 0.01) {
       ctx.save();
       ctx.globalCompositeOperation = 'screen';
-      ctx.fillStyle = `rgba(40,200,70,${wash})`;
+      ctx.fillStyle = `rgba(50,210,80,${wash})`;
       ctx.fillRect(-60, -60, W + 120, H + 120);
       ctx.restore();
     }

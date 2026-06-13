@@ -276,6 +276,10 @@ vm.runInContext(`
   if (!far.shield || far.shield.hp !== 100) throw new Error('radiation drained the shield instead of bypassing it');
   if (near.health >= nearBefore - 30) throw new Error('neutron near tank took too little damage');
   console.log('neutron: far(shielded) ' + farBefore + '->' + far.health + ', near ' + nearBefore + '->' + near.health);
+  // the granddaddy must out-class the thermonuclear in raw blast
+  const nuke = ItemCatalog.byId.neutron, thermo = ItemCatalog.byId.thermo;
+  if (nuke.radius <= thermo.radius) throw new Error('neutron blast radius must exceed thermonuclear');
+  if (nuke.dmg <= thermo.dmg) throw new Error('neutron blast damage must exceed thermonuclear');
 
   // confirmation flow: a confirm weapon must not fire until proceed() is called
   const gc = new Game();

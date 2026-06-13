@@ -41,8 +41,8 @@ const WEAPONS = [
     dmg: 120, radius: 115, shake: 30, flash: true, bubble: 'thermo', desc: 'Map-carving apocalypse.' },
   { id: 'neutron',     name: 'Neutron Bomb',    price: 3500, level: 5, qty: 1, nuclear: true,
     special: 'neutron', confirm: true,
-    dmg: 130, radius: 100, radNear: 58, radFar: 24, shake: 44, flash: true, bubble: 'neutron',
-    desc: 'THE GRANDDADDY. Shield-piercing radiation scours the ENTIRE battlefield.' },
+    dmg: 210, radius: 195, radNear: 90, radFar: 40, shake: 64, flash: true, bubble: 'neutron',
+    desc: 'THE GRANDDADDY. A colossal blast plus shield-piercing radiation across the ENTIRE map.' },
 ];
 
 const UTILITIES = [
