@@ -25,11 +25,23 @@ class Game {
     this.ai = new Map();   // tank -> AIController
     this._terrainCache = Utils.makeCanvas(W, H);
     this._terrainCtx = this._terrainCache.getContext('2d');
+    this._vignette = this._buildVignette();
     this._pendingShooter = null;
 
     // callbacks wired up by main.js
     this.onShop = null;
     this.onGameOver = null;
+  }
+
+  _buildVignette() {
+    const c = Utils.makeCanvas(W, H);
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(W / 2, H / 2, H * 0.48, W / 2, H / 2, H * 1.02);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.34)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, W, H);
+    return c;
   }
 
   /* ================= match / round lifecycle ================= */
@@ -40,7 +52,12 @@ class Game {
     this.totalRounds = config.rounds || 6;
     this.round = 1;
     this.tanks = config.players.map((p, i) => {
-      const t = new Tank({ name: p.name, color: PLAYER_COLORS[i % PLAYER_COLORS.length], type: p.type });
+      const t = new Tank({
+        name: p.name,
+        color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+        type: p.type,
+        cash: config.startCash !== undefined ? config.startCash : 1000,
+      });
       const prof = SaveSystem.getProfile(t.name);
       if (prof) { t.xp = prof.xp; t.level = levelForXP(t.xp); }
       return t;
@@ -215,12 +232,26 @@ class Game {
 
     if (def.special === 'laser') {
       AudioEngine.laser();
+      const lm = tank.muzzle();
+      FX.ring(lm.x, lm.y, 26, 0.25, '#ff8090');
       this.applyLaser(tank, def);
       return;
     }
 
     AudioEngine.launch();
     const m = tank.muzzle();
+    // muzzle flash
+    FX.ring(m.x, m.y, 22, 0.22, '#ffe9a0');
+    for (let i = 0; i < 7; i++) {
+      FX.spawn({
+        x: m.x, y: m.y,
+        vx: m.dx * Utils.rand(60, 220) + Utils.rand(-40, 40),
+        vy: m.dy * Utils.rand(60, 220) + Utils.rand(-40, 40),
+        life: Utils.rand(0.12, 0.3), size: Utils.rand(1.5, 3.5),
+        color: Utils.choice(['#fff3c0', '#ffc24a', '#ffffff']),
+        grav: 0, kind: 'spark',
+      });
+    }
     let speed = tank.power * POWER_TO_SPEED;
     if (def.special === 'railgun') speed = Math.max(speed * 2.6, 1600); // hypervelocity
     const p = new Projectile(def, m.x, m.y, m.dx * speed, m.dy * speed, tank, this);
@@ -568,6 +599,8 @@ class Game {
     FX.drawBubbles(ctx);
     ctx.restore();
 
+    ctx.drawImage(this._vignette, 0, 0);
+
     this.drawHUD(ctx);
 
     // thermonuclear white-out
@@ -669,12 +702,28 @@ class Game {
     ctx.font = '13px "Lucida Console", Monaco, monospace';
     ctx.textAlign = 'left';
 
+    // rounded gradient panel with a subtle top sheen
+    const panel = (x, y, w, h) => {
+      const grad = ctx.createLinearGradient(0, y, 0, y + h);
+      grad.addColorStop(0, 'rgba(18,26,44,0.86)');
+      grad.addColorStop(1, 'rgba(4,7,13,0.86)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, w, h, 9); else ctx.rect(x, y, w, h);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(110,150,210,0.45)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+      ctx.beginPath();
+      ctx.moveTo(x + 8, y + 1.5);
+      ctx.lineTo(x + w - 8, y + 1.5);
+      ctx.stroke();
+    };
+
     // left panel: active player
     const px = 14, py = 12;
-    ctx.fillStyle = 'rgba(5,8,14,0.72)';
-    ctx.fillRect(px - 4, py - 4, 320, 118);
-    ctx.strokeStyle = 'rgba(80,110,160,0.5)';
-    ctx.strokeRect(px - 4, py - 4, 320, 118);
+    panel(px - 4, py - 4, 320, 118);
 
     ctx.fillStyle = t.color;
     ctx.fillRect(px, py + 2, 10, 10);
@@ -724,10 +773,7 @@ class Game {
 
     // right panel: round, wind, roster
     const rx = W - 244, ry = 12;
-    ctx.fillStyle = 'rgba(5,8,14,0.72)';
-    ctx.fillRect(rx - 4, ry - 4, 236, 64 + this.tanks.length * 16);
-    ctx.strokeStyle = 'rgba(80,110,160,0.5)';
-    ctx.strokeRect(rx - 4, ry - 4, 236, 64 + this.tanks.length * 16);
+    panel(rx - 4, ry - 4, 236, 64 + this.tanks.length * 16);
 
     ctx.fillStyle = '#fff';
     ctx.fillText(`ROUND ${this.round}/${this.totalRounds}`, rx, ry + 11);

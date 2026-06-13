@@ -79,10 +79,12 @@
     if (players.length < 2) return;
     const sound = document.getElementById('opt-sound').checked;
     AudioEngine.setEnabled(sound);
+    const cashOpt = document.getElementById('opt-cash').value;
     game.newMatch({
       players,
       rounds: parseInt(document.getElementById('opt-rounds').value, 10),
       wrap: document.getElementById('opt-wrap').checked,
+      startCash: cashOpt === 'unlimited' ? Infinity : parseInt(cashOpt, 10),
       sound,
     });
     if (sound) AudioEngine.startMusic();

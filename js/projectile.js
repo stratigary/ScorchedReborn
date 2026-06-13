@@ -273,26 +273,37 @@ class Projectile {
   }
 
   draw(ctx) {
-    // trail
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // glowing trail, fading toward the tail
     if (this.trail.length > 1) {
-      ctx.save();
-      ctx.strokeStyle = this.def.special === 'homing' ? 'rgba(127,212,255,0.5)' : 'rgba(255,255,255,0.30)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      const trailColor = this.def.special === 'homing' ? '127,212,255' : '255,220,160';
       for (let i = 1; i < this.trail.length; i++) {
         const a = this.trail[i - 1], b = this.trail[i];
-        if (Math.abs(b.x - a.x) > W / 2) { ctx.moveTo(b.x, b.y); continue; } // wrap seam
+        if (Math.abs(b.x - a.x) > W / 2) continue; // wrap seam
+        const f = i / this.trail.length;
+        ctx.strokeStyle = `rgba(${trailColor},${0.34 * f})`;
+        ctx.lineWidth = 0.6 + 1.8 * f;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
         ctx.lineTo(b.x, b.y);
+        ctx.stroke();
       }
-      ctx.lineTo(this.x, this.y);
-      ctx.stroke();
-      ctx.restore();
     }
+    ctx.restore();
+
     ctx.save();
     const big = (this.def.radius || 20) > 55;
-    ctx.fillStyle = this.def.special === 'dirt' ? '#a87b46' : (big ? '#ffec99' : '#f2f2f2');
-    if (big) { ctx.shadowColor = '#ffcc44'; ctx.shadowBlur = 10; }
+    // soft glow halo around the shell
+    const glowR = big ? 13 : 8;
+    const glow = ctx.createRadialGradient(this.x, this.y, 0.5, this.x, this.y, glowR);
+    glow.addColorStop(0, big ? 'rgba(255,236,153,0.9)' : 'rgba(255,255,255,0.65)');
+    glow.addColorStop(1, 'rgba(255,200,80,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, glowR, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = this.def.special === 'dirt' ? '#a87b46' : (big ? '#ffec99' : '#f8f8f8');
     ctx.beginPath();
     ctx.arc(this.x, this.y, big ? 5 : 3.4, 0, TAU);
     ctx.fill();

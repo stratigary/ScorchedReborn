@@ -220,6 +220,12 @@ class Tank {
     ctx.save();
     if (this.buried) ctx.globalAlpha = 0.45;
 
+    // soft contact shadow grounding the tank
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 1, TANK_W * 0.58, 3.5, 0, 0, TAU);
+    ctx.fill();
+
     // parachute
     if (this.chuteActive) {
       ctx.strokeStyle = '#ddd';
@@ -258,12 +264,24 @@ class Tank {
     // hull
     this._drawHull(ctx, x, y);
 
-    // treads
+    // treads: dark track band with road wheels
     ctx.fillStyle = '#1a1d24';
     this._roundRect(ctx, x - TANK_W / 2, y - 6, TANK_W, 7, 3.5);
     ctx.fill();
-    ctx.fillStyle = '#3a3f4d';
-    for (let i = -2; i <= 2; i++) ctx.fillRect(x + i * 6 - 1.5, y - 4.5, 3, 4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    this._roundRect(ctx, x - TANK_W / 2, y - 6, TANK_W, 7, 3.5);
+    ctx.stroke();
+    for (let i = -2; i <= 2; i++) {
+      ctx.fillStyle = '#3a3f4d';
+      ctx.beginPath();
+      ctx.arc(x + i * 6, y - 2.5, 2.2, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = '#586075';
+      ctx.beginPath();
+      ctx.arc(x + i * 6 - 0.6, y - 3.1, 0.9, 0, TAU);
+      ctx.fill();
+    }
 
     ctx.restore();
 
@@ -343,12 +361,31 @@ class Tank {
         break;
       }
     }
+    // hull shading: top sheen falling into lower shadow (works over any skin)
+    const sheen = ctx.createLinearGradient(0, y - TANK_H - 5, 0, y - 2);
+    sheen.addColorStop(0, 'rgba(255,255,255,0.32)');
+    sheen.addColorStop(0.45, 'rgba(255,255,255,0.04)');
+    sheen.addColorStop(1, 'rgba(0,0,0,0.32)');
+    ctx.fillStyle = sheen;
+    ctx.fillRect(x - TANK_W / 2, y - TANK_H - 5, TANK_W, 13);
     ctx.restore();
-    // cupola
+
+    // hull outline
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 1;
+    this._roundRect(ctx, x - TANK_W / 2 + 2, y - TANK_H - 4, TANK_W - 4, 10, 4);
+    ctx.stroke();
+
+    // cupola with highlight
     ctx.fillStyle = this.skin === 'neon' ? '#0a2413' : this.color;
     ctx.beginPath();
     ctx.arc(x, y - TANK_H - 3, 6, Math.PI, 0);
     ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(x, y - TANK_H - 3, 5, Math.PI * 1.15, Math.PI * 1.7);
+    ctx.stroke();
   }
 
   _drawShield(ctx, t) {
@@ -422,7 +459,8 @@ class Tank {
       x: Math.round(this.x), health: this.health, alive: this.alive,
       angle: Math.round(this.angle * 10) / 10, power: Math.round(this.power),
       fuel: Math.round(this.fuel), maxFuel: this.maxFuel,
-      cash: this.cash, xp: this.xp, score: this.score,
+      cash: this.cash === Infinity ? 'inf' : this.cash,
+      xp: this.xp, score: this.score,
       inventory: inv, upgrades: this.upgrades, ownedSkins: this.ownedSkins,
       skin: this.skin, selectedWeapon: this.selectedWeapon,
       shield: this.shield, predeployShield: this.predeployShield,
@@ -430,7 +468,8 @@ class Tank {
   }
 
   static deserialize(d) {
-    const t = new Tank({ name: d.name, color: d.color, type: d.type, x: d.x, cash: d.cash, xp: d.xp });
+    const cash = d.cash === 'inf' ? Infinity : d.cash;
+    const t = new Tank({ name: d.name, color: d.color, type: d.type, x: d.x, cash, xp: d.xp });
     t.health = d.health; t.alive = d.alive;
     t.angle = d.angle; t.power = d.power;
     t.fuel = d.fuel; t.maxFuel = d.maxFuel || 100;

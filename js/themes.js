@@ -14,6 +14,7 @@ const THEMES = [
     soilTop: '#8a5a33', soilBottom: '#4a2f1c',
     texture: 'clay',
     weather: null, windMax: 6,
+    clouds: { n: 6, color: 'rgba(255,255,255,0.85)' },
   },
   {
     id: 'alpine', name: 'Alpine Peaks',
@@ -34,6 +35,7 @@ const THEMES = [
     soilTop: '#a14a2a', soilBottom: '#66291a',
     texture: 'strata',
     weather: 'sand', windMax: 12,
+    clouds: { n: 4, color: 'rgba(255,225,185,0.65)' },
   },
   {
     id: 'volcano', name: 'Volcanic Wasteland',
@@ -64,6 +66,7 @@ const THEMES = [
     soilTop: '#4a1f63', soilBottom: '#241038',
     texture: 'bubbles',
     weather: 'acid', windMax: 11,
+    clouds: { n: 4, color: 'rgba(205,180,235,0.45)' },
   },
 ];
 
@@ -73,7 +76,20 @@ function themeForRound(round) { return THEMES[(round - 1) % THEMES.length]; }
 
 function makeThemeState(theme, seed) {
   const rng = Utils.mulberry32(seed);
-  const state = { stars: [], streams: [] };
+  const state = { stars: [], streams: [], clouds: [] };
+  if (theme.clouds) {
+    for (let i = 0; i < theme.clouds.n; i++) {
+      const puffs = [];
+      const np = 4 + Math.floor(rng() * 3);
+      for (let p = 0; p < np; p++) {
+        puffs.push({ dx: (p - np / 2) * 22 + rng() * 14, dy: (rng() - 0.5) * 12, r: 14 + rng() * 16 });
+      }
+      state.clouds.push({
+        x: rng() * (W + 360), y: 30 + rng() * H * 0.3,
+        speed: 5 + rng() * 9, scale: 0.7 + rng() * 0.7, puffs,
+      });
+    }
+  }
   if (theme.stars) {
     for (let i = 0; i < 130; i++) {
       state.stars.push({ x: rng() * W, y: rng() * H * 0.6, r: rng() * 1.4 + 0.4, tw: rng() * TAU });
@@ -155,6 +171,26 @@ function drawSky(ctx, theme, state, t) {
           ctx.fillRect(sx - sun.r, sy + sun.r * 0.15 + i * sun.r * 0.2, sun.r * 2, sun.r * 0.07);
         }
       }
+    }
+    ctx.restore();
+  }
+
+  // drifting parallax clouds
+  if (theme.clouds && state.clouds.length) {
+    ctx.save();
+    ctx.fillStyle = theme.clouds.color;
+    for (const c of state.clouds) {
+      const cx = ((c.x + t * c.speed) % (W + 420)) - 210;
+      ctx.globalAlpha = 0.5 + 0.2 * c.scale;
+      ctx.beginPath();
+      for (const p of c.puffs) {
+        ctx.moveTo(cx + p.dx * c.scale + p.r * c.scale, c.y + p.dy * c.scale);
+        ctx.arc(cx + p.dx * c.scale, c.y + p.dy * c.scale, p.r * c.scale, 0, TAU);
+      }
+      ctx.fill();
+      // flat base shading for volume
+      ctx.globalAlpha *= 0.35;
+      ctx.fillRect(cx - 55 * c.scale, c.y + 9 * c.scale, 110 * c.scale, 4 * c.scale);
     }
     ctx.restore();
   }
@@ -300,6 +336,19 @@ function drawTerrainCache(g, terrain, theme) {
   g.fillStyle = 'rgba(255,255,255,0.06)';
   for (let x = 0; x < W; x += 26) g.fillRect(x, BEDROCK_Y + 4, 13, 3);
 
+  // ambient-occlusion shadow just beneath the surface for depth
+  g.save();
+  groundPath();
+  g.clip();
+  g.strokeStyle = 'rgba(0,0,0,0.25)';
+  g.lineWidth = theme.capH * 2.2;
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(0, h[0] + theme.capH * 1.6);
+  for (let x = 1; x < W; x++) g.lineTo(x, h[x] + theme.capH * 1.6);
+  g.stroke();
+  g.restore();
+
   // grass / cap line along the surface
   g.save();
   if (theme.capGlow) { g.shadowColor = theme.capGlow; g.shadowBlur = 12; }
@@ -309,6 +358,17 @@ function drawTerrainCache(g, terrain, theme) {
   g.beginPath();
   g.moveTo(0, h[0]);
   for (let x = 1; x < W; x++) g.lineTo(x, h[x]);
+  g.stroke();
+  g.restore();
+
+  // thin sunlit highlight on top of the cap
+  g.save();
+  g.strokeStyle = 'rgba(255,255,255,0.22)';
+  g.lineWidth = 1.6;
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(0, h[0] - theme.capH * 0.42);
+  for (let x = 1; x < W; x++) g.lineTo(x, h[x] - theme.capH * 0.42);
   g.stroke();
   g.restore();
 }

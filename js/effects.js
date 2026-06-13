@@ -4,6 +4,7 @@
 const FX = {
   particles: [],
   bubbles: [],
+  rings: [],
   shakeMag: 0,
   flashAlpha: 0,
   MAX_PARTICLES: 900,
@@ -11,8 +12,14 @@ const FX = {
   reset() {
     this.particles.length = 0;
     this.bubbles.length = 0;
+    this.rings.length = 0;
     this.shakeMag = 0;
     this.flashAlpha = 0;
+  },
+
+  /** Expanding shockwave ring. */
+  ring(x, y, maxR, life, color) {
+    this.rings.push({ x, y, maxR, life, age: 0, color: color || '#ffd9a0' });
   },
 
   addShake(m) { this.shakeMag = Math.min(40, this.shakeMag + m); },
@@ -35,6 +42,18 @@ const FX = {
   /* ---------- explosion & misc visual bursts ---------- */
 
   explosion(x, y, r) {
+    // shockwave rings + hot fireball core
+    this.ring(x, y, r * 2.1, 0.45, '#ffd9a0');
+    if (r > 45) this.ring(x, y, r * 3, 0.7, 'rgba(255,255,255,0.8)');
+    for (let i = 0; i < Math.min(14, 5 + r * 0.12); i++) {
+      this.spawn({
+        x: x + Utils.rand(-r * 0.2, r * 0.2), y: y + Utils.rand(-r * 0.2, r * 0.2),
+        vx: Utils.rand(-30, 30), vy: Utils.rand(-50, -10),
+        life: Utils.rand(0.18, 0.45), size: Utils.rand(r * 0.18, r * 0.4),
+        color: Utils.choice(['#fff3c0', '#ffc24a', '#ff8a2a']),
+        grav: -0.05, kind: 'glow',
+      });
+    }
     const n = Math.min(70, 16 + r);
     for (let i = 0; i < n; i++) {
       const a = Math.random() * TAU;
@@ -154,6 +173,13 @@ const FX = {
       if (p.y > H + 30 || (p.x < -150 && p.vx <= 0) || (p.x > W + 150 && p.vx >= 0)) ps.splice(i, 1);
     }
 
+    // shockwave rings
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const r = this.rings[i];
+      r.age += dt;
+      if (r.age >= r.life) this.rings.splice(i, 1);
+    }
+
     // bubbles
     for (let i = this.bubbles.length - 1; i >= 0; i--) {
       const b = this.bubbles[i];
@@ -163,13 +189,13 @@ const FX = {
   },
 
   draw(ctx) {
+    // pass 1: soft/opaque particles (smoke, weather)
     for (const p of this.particles) {
+      if (p.kind === 'spark' || p.kind === 'streak' || p.kind === 'glow') continue;
       const lifeT = 1 - p.age / p.life;
       ctx.globalAlpha = Math.min(1, lifeT * 2);
       ctx.fillStyle = p.color;
-      if (p.kind === 'streak') {
-        ctx.fillRect(p.x, p.y, p.size * 0.7, p.size * 5);
-      } else if (p.kind === 'smoke') {
+      if (p.kind === 'smoke') {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * (1 + p.age * 0.7), 0, TAU);
         ctx.fill();
@@ -177,6 +203,36 @@ const FX = {
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
       }
     }
+
+    // pass 2: hot/emissive particles & rings, additive for a proper glow
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of this.particles) {
+      const lifeT = 1 - p.age / p.life;
+      ctx.globalAlpha = Math.min(1, lifeT * 2);
+      ctx.fillStyle = p.color;
+      if (p.kind === 'streak') {
+        ctx.fillRect(p.x, p.y, p.size * 0.7, p.size * 5);
+      } else if (p.kind === 'glow') {
+        ctx.globalAlpha = Math.min(1, lifeT) * 0.55;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * (1 + p.age * 2), 0, TAU);
+        ctx.fill();
+      } else if (p.kind === 'spark') {
+        ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+      }
+    }
+    for (const r of this.rings) {
+      const t = r.age / r.life;
+      const ease = 1 - (1 - t) * (1 - t); // ease-out expansion
+      ctx.globalAlpha = (1 - t) * 0.8;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 1 + (1 - t) * 5;
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, Math.max(1, r.maxR * ease), 0, TAU);
+      ctx.stroke();
+    }
+    ctx.restore();
     ctx.globalAlpha = 1;
   },
 

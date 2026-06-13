@@ -18,7 +18,7 @@ const Utils = {
   rad2deg(r) { return r * 180 / Math.PI; },
   smoothstep(t) { return t * t * (3 - 2 * t); },
   wrapX(x) { return ((x % W) + W) % W; },
-  money(n) { return '$' + Math.round(n).toLocaleString('en-US'); },
+  money(n) { return isFinite(n) ? '$' + Math.round(n).toLocaleString('en-US') : '$∞'; },
 
   // Deterministic PRNG for stable per-round procedural textures.
   mulberry32(seed) {

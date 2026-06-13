@@ -103,14 +103,16 @@ vm.runInContext(`
   g2.onShop = () => g2.nextRound();
   g2.newMatch({
     players: [{ name: 'A', type: 'pro' }, { name: 'B', type: 'johnwick' }],
-    rounds: 6, wrap: false, sound: false,
+    rounds: 6, wrap: false, sound: false, startCash: Infinity,
   });
+  if (g2.tanks[0].cash !== Infinity) throw new Error('unlimited start cash not applied');
   for (let i = 0; i < 600; i++) g2.update(dt);
   SaveSystem.saveMatch(g2);
   const data = SaveSystem.loadMatch();
   if (!data) throw new Error('save missing');
   const g3 = new Game();
   g3.restore(data);
+  if (g3.tanks[0].cash !== Infinity) throw new Error('unlimited cash lost in save/restore');
   for (let i = 0; i < 1200; i++) { g3.update(dt); if (i % 9 === 0) g3.render(ctx); }
 
   // exercise every weapon special directly
