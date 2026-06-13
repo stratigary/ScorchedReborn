@@ -84,8 +84,9 @@ function makeThemeState(theme, seed) {
       for (let p = 0; p < np; p++) {
         puffs.push({ dx: (p - np / 2) * 22 + rng() * 14, dy: (rng() - 0.5) * 12, r: 14 + rng() * 16 });
       }
+      const startX = rng() * (W + 360) - 180;
       state.clouds.push({
-        x: rng() * (W + 360), y: 30 + rng() * H * 0.3,
+        x: startX, initialX: startX, y: 30 + rng() * H * 0.3,
         speed: 5 + rng() * 9, scale: 0.7 + rng() * 0.7, puffs,
       });
     }
@@ -106,9 +107,22 @@ function makeThemeState(theme, seed) {
   return state;
 }
 
+function updateSky(state, dt, wind = 0) {
+  if (!state || !state.clouds) return;
+  for (const c of state.clouds) {
+    c.x += (c.speed + wind * 0.15) * dt;
+    const margin = 240 * c.scale;
+    if (c.x > W + margin) {
+      c.x = -margin;
+    } else if (c.x < -margin) {
+      c.x = W + margin;
+    }
+  }
+}
+
 /* ---------- sky rendering (per frame) ---------- */
 
-function drawSky(ctx, theme, state, t) {
+function drawSky(ctx, theme, state, t, wind = 0) {
   const grad = ctx.createLinearGradient(0, 0, 0, H);
   grad.addColorStop(0, theme.sky[0]);
   grad.addColorStop(1, theme.sky[1]);
@@ -128,45 +142,37 @@ function drawSky(ctx, theme, state, t) {
 
   if (theme.id === 'matrix') {
     ctx.save();
-    ctx.font = '13px monospace';
-    for (const st of state.streams) {
-      st.y += st.speed / 60;
-      if (st.y - st.len * 14 > H) { st.y = -20; st.x = Math.random() * W; }
-      const rng = Utils.mulberry32(st.seed + Math.floor(t * 6));
-      for (let i = 0; i < st.len; i++) {
-        const cy = st.y - i * 14;
-        if (cy < -14 || cy > H) continue;
-        ctx.globalAlpha = (i === 0 ? 0.95 : 0.5 * (1 - i / st.len));
-        ctx.fillStyle = i === 0 ? '#c8ffd8' : '#2bdd55';
-        ctx.fillText(rng() < 0.5 ? '0' : '1', st.x, cy);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = '#0f0';
+    for (const s of state.streams) {
+      const cy = (t * s.speed) % (H + s.len * 14) - s.len * 14;
+      ctx.globalAlpha = 0.15;
+      for (let j = 0; j < s.len; j++) {
+        const charY = cy + j * 14;
+        if (charY < 0 || charY > H) continue;
+        ctx.globalAlpha = 0.04 + 0.12 * (j / s.len);
+        const seedVal = s.seed + j + Math.floor(t * 4);
+        const char = String.fromCharCode(33 + (seedVal % 93));
+        ctx.fillText(char, s.x, charY);
       }
     }
     ctx.restore();
   }
-
-  const sun = theme.sun;
-  if (sun) {
-    const sx = sun.x * W, sy = sun.y * H;
+  if (theme.id === 'cyberpunk') {
     ctx.save();
-    // glow halo
-    const halo = ctx.createRadialGradient(sx, sy, sun.r * 0.4, sx, sy, sun.r * 3);
-    halo.addColorStop(0, sun.glow);
-    halo.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = halo;
-    ctx.fillRect(sx - sun.r * 3, sy - sun.r * 3, sun.r * 6, sun.r * 6);
-
-    if (sun.kind === 'moon') {
-      // crescent: bright disc with offset dark disc
-      ctx.fillStyle = sun.color;
-      ctx.beginPath(); ctx.arc(sx, sy, sun.r, 0, TAU); ctx.fill();
-      ctx.fillStyle = theme.sky[0];
-      ctx.beginPath(); ctx.arc(sx + sun.r * 0.42, sy - sun.r * 0.18, sun.r * 0.88, 0, TAU); ctx.fill();
-    } else {
-      ctx.fillStyle = sun.color;
-      ctx.beginPath(); ctx.arc(sx, sy, sun.r, 0, TAU); ctx.fill();
-      if (sun.kind === 'bigsun') {
-        // horizontal banding on a giant setting sun
-        ctx.fillStyle = 'rgba(255,140,58,0.5)';
+    const sun = theme.sun;
+    if (sun) {
+      const sx = sun.x || W / 2, sy = sun.y || H * 0.45;
+      const g = ctx.createRadialGradient(sx, sy, sun.r * 0.2, sx, sy, sun.r);
+      g.addColorStop(0, sun.color[0]);
+      g.addColorStop(1, sun.color[1]);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sun.r, 0, TAU);
+      ctx.fill();
+      // neon bands
+      if (theme.id === 'cyberpunk') {
+        ctx.fillStyle = theme.sky[1];
         for (let i = 0; i < 4; i++) {
           ctx.fillRect(sx - sun.r, sy + sun.r * 0.15 + i * sun.r * 0.2, sun.r * 2, sun.r * 0.07);
         }
@@ -180,17 +186,18 @@ function drawSky(ctx, theme, state, t) {
     ctx.save();
     ctx.fillStyle = theme.clouds.color;
     for (const c of state.clouds) {
-      const cx = ((c.x + t * c.speed) % (W + 420)) - 210;
+      const cx = c.x !== undefined ? c.x : (((c.initialX || 0) + t * (c.speed + wind * 0.15)) % (W + 420)) - 210;
+      const stretch = 1.0 + Math.abs(wind) * 0.006;
       ctx.globalAlpha = 0.5 + 0.2 * c.scale;
       ctx.beginPath();
       for (const p of c.puffs) {
-        ctx.moveTo(cx + p.dx * c.scale + p.r * c.scale, c.y + p.dy * c.scale);
-        ctx.arc(cx + p.dx * c.scale, c.y + p.dy * c.scale, p.r * c.scale, 0, TAU);
+        ctx.moveTo(cx + p.dx * c.scale * stretch + p.r * c.scale, c.y + p.dy * c.scale);
+        ctx.arc(cx + p.dx * c.scale * stretch, c.y + p.dy * c.scale, p.r * c.scale, 0, TAU);
       }
       ctx.fill();
       // flat base shading for volume
       ctx.globalAlpha *= 0.35;
-      ctx.fillRect(cx - 55 * c.scale, c.y + 9 * c.scale, 110 * c.scale, 4 * c.scale);
+      ctx.fillRect(cx - 55 * c.scale * stretch, c.y + 9 * c.scale, 110 * c.scale * stretch, 4 * c.scale);
     }
     ctx.restore();
   }
@@ -347,6 +354,75 @@ function drawTerrainCache(g, terrain, theme) {
   g.moveTo(0, h[0] + theme.capH * 1.6);
   for (let x = 1; x < W; x++) g.lineTo(x, h[x] + theme.capH * 1.6);
   g.stroke();
+  g.restore();
+
+  // soot charred overlay
+  // Draw indestructible concrete/stone structures
+  if (terrain.indestructible) {
+    g.save();
+    groundPath();
+    g.clip();
+
+    g.fillStyle = '#4b5263';
+    g.strokeStyle = '#292d37';
+    g.lineWidth = 1;
+    for (let x = 0; x < W; x++) {
+      const limitY = terrain.indestructible[x];
+      if (limitY < BEDROCK_Y) {
+        g.fillRect(x, limitY, 1, BEDROCK_Y - limitY);
+        // vertical grid panel lines
+        if (x % 36 === 0) {
+          g.beginPath();
+          g.moveTo(x, limitY);
+          g.lineTo(x, BEDROCK_Y);
+          g.stroke();
+        }
+      }
+    }
+    // horizontal brick layers
+    g.strokeStyle = 'rgba(255,255,255,0.06)';
+    for (let y = 300; y < BEDROCK_Y; y += 22) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(W, y); g.stroke();
+    }
+    // top highlight for stone structure
+    g.strokeStyle = '#8c95a8';
+    g.lineWidth = 3;
+    g.beginPath();
+    let drawing = false;
+    for (let x = 0; x < W; x++) {
+      const limitY = terrain.indestructible[x];
+      if (limitY < BEDROCK_Y) {
+        if (!drawing) {
+          g.moveTo(x, limitY + 1);
+          drawing = true;
+        } else {
+          g.lineTo(x, limitY + 1);
+        }
+      } else {
+        if (drawing) {
+          g.stroke();
+          drawing = false;
+        }
+      }
+    }
+    if (drawing) g.stroke();
+    g.restore();
+  }
+
+  g.save();
+  groundPath();
+  g.clip();
+  g.strokeStyle = '#040406';
+  g.lineWidth = 1.2;
+  for (let x = 0; x < W; x++) {
+    if (terrain.soot && terrain.soot[x] > 0.01) {
+      g.globalAlpha = terrain.soot[x] * 0.88;
+      g.beginPath();
+      g.moveTo(x, h[x] - 1);
+      g.lineTo(x, h[x] + 15);
+      g.stroke();
+    }
+  }
   g.restore();
 
   // grass / cap line along the surface

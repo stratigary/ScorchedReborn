@@ -8,9 +8,26 @@ class Terrain {
   constructor(seed) {
     this.seed = seed === undefined ? Math.floor(Math.random() * 1e9) : seed;
     this.h = new Float32Array(W);
+    this.soot = new Float32Array(W);
+    this.indestructible = new Float32Array(W);
+    this.indestructible.fill(BEDROCK_Y);
     this.dirty = true;        // terrain cache needs redraw
     this._relaxAcc = 0;
     this.generate();
+  }
+
+  generateStructures(challengeType) {
+    if (challengeType === 'windstorm') {
+      const createTower = (startX, endX, heightY) => {
+        for (let x = startX; x <= endX; x++) {
+          this.indestructible[x] = heightY;
+          this.h[x] = Math.min(this.h[x], heightY); // raise terrain to match tower
+        }
+      };
+      createTower(450, 580, 480);
+      createTower(1020, 1150, 480);
+      this.dirty = true;
+    }
   }
 
   /* Midpoint displacement generation. */
@@ -58,6 +75,7 @@ class Terrain {
   isSolid(x, y) {
     if (y >= BEDROCK_Y) return true;
     if (x < 0 || x >= W) return false;
+    if (this.indestructible && y >= this.indestructible[Math.round(x)]) return true;
     return y >= this.h[Math.round(Utils.clamp(x, 0, W - 1))];
   }
 
@@ -71,13 +89,25 @@ class Terrain {
       if (d <= 0) continue;
       const top = cy - d, bot = cy + d;
       const surf = this.h[x];
+      const limitY = this.indestructible ? this.indestructible[x] : BEDROCK_Y;
       if (surf >= bot) continue; // blast circle entirely in the air above this column
       if (surf >= top) {
         // surface intersects the circle: surface drops to the circle bottom
-        this.h[x] = Math.min(BEDROCK_Y, bot);
+        this.h[x] = Math.min(limitY, bot);
       } else {
         // circle fully underground: dirt above collapses by the removed thickness
-        this.h[x] = Math.min(BEDROCK_Y, surf + (bot - top));
+        this.h[x] = Math.min(limitY, surf + (bot - top));
+      }
+    }
+    // apply charred soot slightly wider than the crater radius
+    const sx0 = Math.max(0, Math.floor(cx - r * 1.35));
+    const sx1 = Math.min(W - 1, Math.ceil(cx + r * 1.35));
+    for (let x = sx0; x <= sx1; x++) {
+      const dx = x - cx;
+      const dist = Math.abs(dx);
+      const factor = 1 - dist / (r * 1.35);
+      if (factor > 0) {
+        this.soot[x] = Math.min(1.0, this.soot[x] + factor * 0.95);
       }
     }
     this.dirty = true;
@@ -111,7 +141,9 @@ class Terrain {
   /** Melt away `amount` px of ground at column x (napalm). */
   melt(x, amount) {
     const xi = Math.round(Utils.clamp(x, 0, W - 1));
-    this.h[xi] = Math.min(BEDROCK_Y, this.h[xi] + amount);
+    const limitY = this.indestructible ? this.indestructible[xi] : BEDROCK_Y;
+    this.h[xi] = Math.min(limitY, this.h[xi] + amount);
+    this.soot[xi] = Math.min(1.0, this.soot[xi] + 0.85);
     this.dirty = true;
   }
 
@@ -153,12 +185,20 @@ class Terrain {
   }
 
   serialize() {
-    return { seed: this.seed, h: Array.from(this.h, v => Math.round(v * 10) / 10) };
+    return {
+      seed: this.seed,
+      h: Array.from(this.h, v => Math.round(v * 10) / 10),
+      soot: Array.from(this.soot, v => Math.round(v * 100) / 100),
+    };
   }
 
   static deserialize(data) {
     const t = new Terrain(data.seed);
     for (let x = 0; x < W && x < data.h.length; x++) t.h[x] = data.h[x];
+    t.soot = new Float32Array(W);
+    if (data.soot) {
+      for (let x = 0; x < W && x < data.soot.length; x++) t.soot[x] = data.soot[x];
+    }
     t.dirty = true;
     return t;
   }

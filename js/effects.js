@@ -48,7 +48,8 @@ const FX = {
 
   /* ---------- explosion & misc visual bursts ---------- */
 
-  explosion(x, y, r) {
+  explosion(x, y, r, soilColor) {
+    const sCol = soilColor || '#8a5a33';
     // shockwave rings + hot fireball core
     this.ring(x, y, r * 2.1, 0.45, '#ffd9a0');
     if (r > 45) this.ring(x, y, r * 3, 0.7, 'rgba(255,255,255,0.8)');
@@ -81,6 +82,17 @@ const FX = {
         color: 'rgba(90,90,90,0.5)', grav: -0.06, kind: 'smoke',
       });
     }
+    // physical soil debris
+    const numDebris = Math.min(30, 8 + Math.floor(r * 0.3));
+    for (let i = 0; i < numDebris; i++) {
+      const a = Utils.rand(-Math.PI * 0.92, -Math.PI * 0.08);
+      const sp = Utils.rand(70, 240);
+      this.spawn({
+        x, y: y - 2, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: Utils.rand(0.7, 1.6), size: Utils.rand(2.2, 5.0),
+        color: sCol, grav: 0.9, kind: 'debris',
+      });
+    }
   },
 
   dirtBurst(x, y, r, color) {
@@ -106,7 +118,58 @@ const FX = {
 
   weatherTimer: 0,
 
-  spawnWeather(dt, theme, wind) {
+  spawnWeather(dt, theme, wind, weatherSetting) {
+    if (weatherSetting === 'wtf') {
+      this.weatherTimer += dt;
+      while (this.weatherTimer > 0.006) {
+        this.weatherTimer -= 0.006;
+        const x = Utils.rand(-100, W + 100);
+        const y = Utils.rand(-20, H * 0.4);
+        const type = Utils.choice(['snow', 'sand', 'ash', 'matrix', 'acid', 'rainbow']);
+        const wVal = wind || Utils.rand(-2, 2);
+        
+        switch (type) {
+          case 'snow':
+            this.spawn({ x, y: -8, vx: wVal * 5 + Utils.rand(-25, 25), vy: Utils.rand(40, 90),
+              life: 14, size: Utils.rand(2, 4.5), color: '#ffffff', grav: 0.01, kind: 'snow', sway: Math.random() * TAU });
+            break;
+          case 'sand':
+            this.spawn({ x: wVal >= 0 ? -10 : W + 10, y: Utils.rand(0, H * 0.8),
+              vx: (wVal === 0 ? 1 : Math.sign(wVal)) * Utils.rand(300, 700), vy: Utils.rand(-20, 30),
+              life: 7, size: Utils.rand(2, 4), color: 'rgba(232,200,120,0.75)', grav: 0.02, kind: 'sand' });
+            break;
+          case 'ash':
+            this.spawn({ x, y: -8, vx: wVal * 7 + Utils.rand(-20, 20), vy: Utils.rand(25, 60),
+              life: 18, size: Utils.rand(2, 5), color: Utils.choice(['#ff6600', '#666666', '#ffb070', '#333333']),
+              grav: -0.01, kind: 'snow', sway: Math.random() * TAU });
+            break;
+          case 'matrix':
+            this.spawn({ x, y: -8, vx: wVal * 3, vy: Utils.rand(200, 400),
+              life: 6, size: Utils.rand(2, 3.5), color: '#39ff6a', grav: 0, kind: 'streak' });
+            break;
+          case 'acid':
+            this.spawn({ x, y: -8, vx: wVal * 9, vy: Utils.rand(280, 480),
+              life: 5, size: 2.2, color: '#a4ff3c', grav: 0.04, kind: 'streak' });
+            break;
+          case 'rainbow':
+            const a = Utils.rand(0, TAU);
+            const sp = Utils.rand(60, 250);
+            this.spawn({
+              x, y: Utils.rand(0, H * 0.6),
+              vx: Math.cos(a) * sp + wVal * 4,
+              vy: Math.sin(a) * sp + 30,
+              life: Utils.rand(1.5, 4.0),
+              size: Utils.rand(3, 7),
+              color: Utils.choice(['#ff0055', '#00ffcc', '#ffcc00', '#cc00ff', '#00ff3c', '#ff3c00']),
+              grav: 0.08,
+              kind: 'glow'
+            });
+            break;
+        }
+      }
+      return;
+    }
+
     if (!theme.weather) return;
     this.weatherTimer += dt;
     const rates = { snow: 0.02, sand: 0.008, ash: 0.03, matrix: 0.02, acid: 0.012 };
@@ -143,7 +206,7 @@ const FX = {
 
   /* ---------- update & draw ---------- */
 
-  update(dt, terrain, vortices) {
+  update(dt, terrain, vortices, wind = 0) {
     this.shakeMag *= Math.pow(0.04, dt);
     this.flashAlpha = Math.max(0, this.flashAlpha - dt * 1.4);
     this.dimAlpha = Math.max(0, this.dimAlpha - dt * 0.55);
@@ -167,16 +230,37 @@ const FX = {
         }
       }
       p.vy += GRAV * (p.grav || 0) * dt;
+      if (p.kind === 'spark' || p.kind === 'smoke') {
+        const windAccel = p.kind === 'smoke' ? 1.4 : 0.7;
+        p.vx += wind * windAccel * dt;
+      }
       if (p.kind === 'snow') p.vx += Math.sin(p.age * 2 + p.sway) * 8 * dt;
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      // weather/sparks die on terrain contact
+      // weather/sparks/debris collision with terrain
       if (terrain && p.y > 0 && terrain.isSolid(p.x, p.y)) {
-        if (p.kind === 'streak' || p.kind === 'snow' || p.kind === 'sand') { ps.splice(i, 1); continue; }
-        // sparks settle briefly then die
-        p.vy = -Math.abs(p.vy) * 0.3;
-        p.vx *= 0.5;
-        p.life = Math.min(p.life, p.age + 0.3);
+        if (p.kind === 'debris') {
+          const n = terrain.normalAt(p.x);
+          const dot = p.vx * n.x + p.vy * n.y;
+          if (dot < 0) {
+            const elasticity = 0.38;
+            p.vx = (p.vx - (1 + elasticity) * dot * n.x) * 0.7; // bounce and friction
+            p.vy = (p.vy - (1 + elasticity) * dot * n.y) * 0.7;
+            p.y = terrain.heightAt(p.x) - 1.5;
+          }
+          if (Math.hypot(p.vx, p.vy) < 12) {
+            p.vx = 0; p.vy = 0;
+            p.life = Math.min(p.life, p.age + 0.15); // settle and fade shortly
+          }
+        } else if (p.kind === 'streak' || p.kind === 'snow' || p.kind === 'sand') {
+          ps.splice(i, 1);
+          continue;
+        } else {
+          // sparks settle briefly then die
+          p.vy = -Math.abs(p.vy) * 0.3;
+          p.vx *= 0.5;
+          p.life = Math.min(p.life, p.age + 0.3);
+        }
       }
       if (p.y > H + 30 || (p.x < -150 && p.vx <= 0) || (p.x > W + 150 && p.vx >= 0)) ps.splice(i, 1);
     }
@@ -206,6 +290,10 @@ const FX = {
       if (p.kind === 'smoke') {
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.size * (1 + p.age * 0.7), 0, TAU);
+        ctx.fill();
+      } else if (p.kind === 'debris') {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size / 2, 0, TAU);
         ctx.fill();
       } else {
         ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);

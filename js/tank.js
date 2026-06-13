@@ -12,8 +12,9 @@ class Tank {
   constructor(cfg) {
     this.name = cfg.name;
     this.color = cfg.color;
-    this.type = cfg.type || 'human';     // 'human' | 'novice' | 'amateur' | 'pro' | 'johnwick'
+    this.type = cfg.type || 'human';     // 'human' | 'novice' | 'amateur' | 'pro' | 'johnwick' | 'behemoth'
     this.isBot = this.type !== 'human';
+    this.isBoss = this.type === 'behemoth';
 
     // position / physics
     this.x = cfg.x || 100;
@@ -35,7 +36,7 @@ class Tank {
     this.predeployShield = false;
 
     // economy / progression
-    this.cash = cfg.cash !== undefined ? cfg.cash : 1000;
+    this.cash = cfg.cash !== undefined ? cfg.cash : 10000;
     this.xp = cfg.xp || 0;
     this.level = levelForXP(this.xp);
     this.score = 0;
@@ -52,6 +53,8 @@ class Tank {
     this.roundDamage = 0;
     this.roundKills = 0;
   }
+
+  get radius() { return this.isBoss ? 28 : TANK_RADIUS; }
 
   /* ---------- progression ---------- */
 
@@ -131,15 +134,14 @@ class Tank {
   /* ---------- per-frame physics: settle on / fall toward terrain ---------- */
 
   updatePhysics(dt, terrain) {
-    if (!this.alive) return null;
     this.x = Utils.clamp(this.x, 10, W - 10);
     const ground = terrain.heightAt(this.x);
 
     if (ground > this.y + 1.5) {
       // air below us: fall
       if (!this.falling) { this.falling = true; this.vy = Math.max(0, this.vy); }
-      // parachute auto-deploy
-      if (!this.chuteActive && this.vy > CHUTE_DEPLOY_SPEED && this.ammo('parachute') > 0) {
+      // parachute auto-deploy: only for alive tanks
+      if (this.alive && !this.chuteActive && this.vy > CHUTE_DEPLOY_SPEED && this.ammo('parachute') > 0) {
         this.chuteActive = true;
       }
       if (this.chuteActive) {
@@ -205,10 +207,11 @@ class Tank {
   muzzle() {
     const rad = Utils.deg2rad(this.angle);
     const dx = Math.cos(rad), dy = -Math.sin(rad);
-    const baseY = this.y - TANK_H;
+    const s = this.isBoss ? 1.6 : 1.0;
+    const baseY = this.y - TANK_H * s;
     return {
-      x: this.x + dx * 24,
-      y: baseY + dy * 24,
+      x: this.x + dx * 24 * s,
+      y: baseY + dy * 24 * s,
       dx, dy,
     };
   }
@@ -218,69 +221,90 @@ class Tank {
   draw(ctx, isActive, t) {
     if (!this.alive) { this._drawWreck(ctx); return; }
     const x = this.x, y = this.y;
+    const s = this.isBoss ? 1.6 : 1.0;
     ctx.save();
     if (this.buried) ctx.globalAlpha = 0.45;
 
     // soft contact shadow grounding the tank
     ctx.fillStyle = 'rgba(0,0,0,0.30)';
     ctx.beginPath();
-    ctx.ellipse(x, y + 1, TANK_W * 0.58, 3.5, 0, 0, TAU);
+    ctx.ellipse(x, y + 1, TANK_W * 0.58 * s, 3.5 * s, 0, 0, TAU);
     ctx.fill();
 
     // parachute
     if (this.chuteActive) {
       ctx.strokeStyle = '#ddd';
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 1.5 * s;
       ctx.beginPath();
-      ctx.moveTo(x - 14, y - 52);
-      ctx.quadraticCurveTo(x, y - 70, x + 14, y - 52);
-      ctx.lineTo(x + 4, y - 16);
-      ctx.moveTo(x - 14, y - 52);
-      ctx.lineTo(x - 4, y - 16);
+      ctx.moveTo(x - 14 * s, y - 52 * s);
+      ctx.quadraticCurveTo(x, y - 70 * s, x + 14 * s, y - 52 * s);
+      ctx.lineTo(x + 4 * s, y - 16 * s);
+      ctx.moveTo(x - 14 * s, y - 52 * s);
+      ctx.lineTo(x - 4 * s, y - 16 * s);
       ctx.stroke();
       ctx.fillStyle = '#e35555';
       ctx.beginPath();
-      ctx.moveTo(x - 15, y - 52);
-      ctx.quadraticCurveTo(x, y - 72, x + 15, y - 52);
-      ctx.quadraticCurveTo(x, y - 46, x - 15, y - 52);
+      ctx.moveTo(x - 15 * s, y - 52 * s);
+      ctx.quadraticCurveTo(x, y - 72 * s, x + 15 * s, y - 52 * s);
+      ctx.quadraticCurveTo(x, y - 46 * s, x - 15 * s, y - 52 * s);
       ctx.fill();
     }
 
-    // turret barrel
+    // turret barrel(s)
     const m = this.muzzle();
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 5;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(x, y - TANK_H);
-    ctx.lineTo(m.x, m.y);
-    ctx.stroke();
-    ctx.strokeStyle = this.color;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(x, y - TANK_H);
-    ctx.lineTo(m.x, m.y);
-    ctx.stroke();
+    if (this.isBoss) {
+      // Draw three barrels!
+      const angles = [-0.09, 0, 0.09];
+      const baseY = y - TANK_H * s;
+      for (const a of angles) {
+        const rad = Utils.deg2rad(this.angle) + a;
+        const dx = Math.cos(rad), dy = -Math.sin(rad);
+        const mx = x + dx * 38 * s;
+        const my = baseY + dy * 38 * s;
+
+        ctx.strokeStyle = '#222';
+        ctx.lineWidth = 8;
+        ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(mx, my); ctx.stroke();
+
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = 4.5;
+        ctx.beginPath(); ctx.moveTo(x, baseY); ctx.lineTo(mx, my); ctx.stroke();
+      }
+    } else {
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x, y - TANK_H);
+      ctx.lineTo(m.x, m.y);
+      ctx.stroke();
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, y - TANK_H);
+      ctx.lineTo(m.x, m.y);
+      ctx.stroke();
+    }
 
     // hull
     this._drawHull(ctx, x, y);
 
     // treads: dark track band with road wheels
     ctx.fillStyle = '#1a1d24';
-    this._roundRect(ctx, x - TANK_W / 2, y - 6, TANK_W, 7, 3.5);
+    this._roundRect(ctx, x - TANK_W / 2 * s, y - 6 * s, TANK_W * s, 7 * s, 3.5 * s);
     ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.10)';
-    ctx.lineWidth = 1;
-    this._roundRect(ctx, x - TANK_W / 2, y - 6, TANK_W, 7, 3.5);
+    ctx.lineWidth = 1 * s;
+    this._roundRect(ctx, x - TANK_W / 2 * s, y - 6 * s, TANK_W * s, 7 * s, 3.5 * s);
     ctx.stroke();
     for (let i = -2; i <= 2; i++) {
       ctx.fillStyle = '#3a3f4d';
       ctx.beginPath();
-      ctx.arc(x + i * 6, y - 2.5, 2.2, 0, TAU);
+      ctx.arc(x + i * 6 * s, y - 2.5 * s, 2.2 * s, 0, TAU);
       ctx.fill();
       ctx.fillStyle = '#586075';
       ctx.beginPath();
-      ctx.arc(x + i * 6 - 0.6, y - 3.1, 0.9, 0, TAU);
+      ctx.arc(x + i * 6 * s - 0.6 * s, y - 3.1 * s, 0.9 * s, 0, TAU);
       ctx.fill();
     }
 
@@ -292,36 +316,38 @@ class Tank {
 
     // name tag + health bar
     ctx.save();
-    ctx.font = '11px "Lucida Console", Monaco, monospace';
+    ctx.font = this.isBoss ? 'bold 12px "Lucida Console", Monaco, monospace' : '11px "Lucida Console", Monaco, monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = isActive ? '#ffffff' : 'rgba(255,255,255,0.75)';
-    ctx.fillText(this.name, x, y - 34);
+    ctx.fillText(this.isBoss ? '★ THE BEHEMOTH ★' : this.name, x, y - 34 * s);
     if (isActive) {
       const bob = Math.sin(t * 5) * 3;
       ctx.fillStyle = this.color;
       ctx.beginPath();
-      ctx.moveTo(x, y - 56 + bob);
-      ctx.lineTo(x - 5, y - 64 + bob);
-      ctx.lineTo(x + 5, y - 64 + bob);
+      ctx.moveTo(x, y - (56 + bob) * s);
+      ctx.lineTo(x - 5 * s, y - (64 + bob) * s);
+      ctx.lineTo(x + 5 * s, y - (64 + bob) * s);
       ctx.closePath();
       ctx.fill();
     }
-    const bw = 30;
+    const bw = 30 * s;
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(x - bw / 2, y - 30, bw, 4);
-    const hpT = this.health / 100;
+    ctx.fillRect(x - bw / 2, y - 30 * s, bw, 4 * s);
+    const maxHp = this.isBoss ? 600 : 100;
+    const hpT = this.health / maxHp;
     ctx.fillStyle = hpT > 0.5 ? '#5cd65c' : hpT > 0.25 ? '#ffd54f' : '#ff5252';
-    ctx.fillRect(x - bw / 2, y - 30, bw * hpT, 4);
+    ctx.fillRect(x - bw / 2, y - 30 * s, bw * hpT, 4 * s);
     if (this.buried) {
       ctx.fillStyle = '#caa472';
-      ctx.fillText('BURIED', x, y - 44);
+      ctx.fillText('BURIED', x, y - 44 * s);
     }
     ctx.restore();
   }
 
   _drawHull(ctx, x, y) {
+    const s = this.isBoss ? 1.6 : 1.0;
     ctx.fillStyle = this.color;
-    this._roundRect(ctx, x - TANK_W / 2 + 2, y - TANK_H - 4, TANK_W - 4, 10, 4);
+    this._roundRect(ctx, x - (TANK_W / 2 - 2) * s, y - (TANK_H + 4) * s, (TANK_W - 4) * s, 10 * s, 4 * s);
     ctx.fill();
     // skin overlays
     ctx.save();
@@ -392,63 +418,66 @@ class Tank {
   _drawShield(ctx, t) {
     const s = this.shield;
     const hpT = s.hp / s.max;
-    const r = 26 + 16 * hpT; // dome shrinks as it degrades
+    const scale = this.isBoss ? 1.6 : 1.0;
+    const r = (26 + 16 * hpT) * scale;
     const pulse = 0.85 + 0.15 * Math.sin(t * 6);
     ctx.save();
     ctx.globalAlpha = (0.18 + 0.3 * hpT) * pulse;
-    const g = ctx.createRadialGradient(this.x, this.y - 10, r * 0.4, this.x, this.y - 10, r);
+    const g = ctx.createRadialGradient(this.x, this.y - 10 * scale, r * 0.4, this.x, this.y - 10 * scale, r);
     g.addColorStop(0, 'rgba(80,200,255,0.05)');
     g.addColorStop(0.8, 'rgba(80,200,255,0.5)');
     g.addColorStop(1, 'rgba(140,230,255,0.9)');
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(this.x, this.y - 10, r, 0, TAU);
+    ctx.arc(this.x, this.y - 10 * scale, r, 0, TAU);
     ctx.fill();
     ctx.globalAlpha = 0.5 + 0.4 * hpT;
     ctx.strokeStyle = '#9fe8ff';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.5 * scale;
     ctx.stroke();
     ctx.restore();
   }
 
   _drawMagField(ctx, t) {
     ctx.save();
+    const scale = this.isBoss ? 1.6 : 1.0;
     // faint filled deflector field at its true influence radius
-    const g = ctx.createRadialGradient(this.x, this.y - 10, 30, this.x, this.y - 10, 120);
+    const g = ctx.createRadialGradient(this.x, this.y - 10 * scale, 30 * scale, this.x, this.y - 10 * scale, 120 * scale);
     g.addColorStop(0, 'rgba(160,90,255,0)');
     g.addColorStop(0.82, 'rgba(170,110,255,0.04)');
     g.addColorStop(1, 'rgba(190,130,255,0.14)');
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(this.x, this.y - 10, 120, 0, TAU);
+    ctx.arc(this.x, this.y - 10 * scale, 120 * scale, 0, TAU);
     ctx.fill();
     // two rotating dashed boundary rings
     ctx.globalAlpha = 0.22 + 0.08 * Math.sin(t * 3);
     ctx.strokeStyle = '#cc88ff';
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.5 * scale;
     ctx.setLineDash([7, 9]);
     ctx.lineDashOffset = -t * 30;
     ctx.beginPath();
-    ctx.arc(this.x, this.y - 10, 118, 0, TAU);
+    ctx.arc(this.x, this.y - 10 * scale, 118 * scale, 0, TAU);
     ctx.stroke();
     ctx.setLineDash([4, 11]);
     ctx.lineDashOffset = t * 22;
     ctx.beginPath();
-    ctx.arc(this.x, this.y - 10, 96, 0, TAU);
+    ctx.arc(this.x, this.y - 10 * scale, 96 * scale, 0, TAU);
     ctx.stroke();
     ctx.restore();
   }
 
   _drawWreck(ctx) {
+    const s = this.isBoss ? 1.6 : 1.0;
     ctx.save();
     ctx.fillStyle = '#23262e';
-    this._roundRect(ctx, this.x - TANK_W / 2 + 2, this.y - 9, TANK_W - 4, 9, 3);
+    this._roundRect(ctx, this.x - TANK_W / 2 * s + 2 * s, this.y - 9 * s, (TANK_W - 4) * s, 9 * s, 3 * s);
     ctx.fill();
     ctx.strokeStyle = '#111';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 3 * s;
     ctx.beginPath();
-    ctx.moveTo(this.x, this.y - 8);
-    ctx.lineTo(this.x + 8, this.y - 20);
+    ctx.moveTo(this.x, this.y - 8 * s);
+    ctx.lineTo(this.x + 8 * s, this.y - 20 * s);
     ctx.stroke();
     ctx.restore();
   }

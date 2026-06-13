@@ -18,6 +18,7 @@ const AudioEngine = {
   _nextStepTime: 0,
   _humOsc: null,
   _humRefs: 0,
+  intensity: 0,   // 0..1 dynamic battle intensity
 
   TEMPO: 112, // BPM
 
@@ -83,9 +84,19 @@ const AudioEngine = {
 
   resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
 
+  setIntensity(v) {
+    this.intensity = Math.max(0, Math.min(1, v));
+  },
+
+  _panValue(x) {
+    if (typeof x !== 'number') return 0;
+    const p = (x / 1600) * 2 - 1;
+    return Math.max(-1, Math.min(1, p));
+  },
+
   /* ---------- building blocks ---------- */
 
-  _noise({ dur = 0.3, type = 'bandpass', freq = 600, q = 1, gain = 0.5, f1 = null, at = 0 }) {
+  _noise({ dur = 0.3, type = 'bandpass', freq = 600, q = 1, gain = 0.5, f1 = null, at = 0, pan = 0 }) {
     if (!this.ctx) return;
     const t0 = this.ctx.currentTime + at;
     const src = this.ctx.createBufferSource();
@@ -99,11 +110,22 @@ const AudioEngine = {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(gain, t0);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    src.connect(flt).connect(g).connect(this.sfxGain);
+    
+    let panner = null;
+    if (typeof pan === 'number' && pan !== 0 && this.ctx.createStereoPanner) {
+      panner = this.ctx.createStereoPanner();
+      panner.pan.setValueAtTime(pan, t0);
+    }
+
+    if (panner) {
+      src.connect(flt).connect(g).connect(panner).connect(this.sfxGain);
+    } else {
+      src.connect(flt).connect(g).connect(this.sfxGain);
+    }
     src.start(t0); src.stop(t0 + dur + 0.05);
   },
 
-  _tone({ type = 'sine', f0 = 440, f1 = null, dur = 0.2, gain = 0.3, at = 0, dest = null }) {
+  _tone({ type = 'sine', f0 = 440, f1 = null, dur = 0.2, gain = 0.3, at = 0, dest = null, pan = 0 }) {
     if (!this.ctx) return;
     const t0 = this.ctx.currentTime + at;
     const osc = this.ctx.createOscillator();
@@ -113,42 +135,66 @@ const AudioEngine = {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(gain, t0);
     g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-    osc.connect(g).connect(dest || this.sfxGain);
+    
+    const out = dest || this.sfxGain;
+    let panner = null;
+    if (typeof pan === 'number' && pan !== 0 && this.ctx.createStereoPanner) {
+      panner = this.ctx.createStereoPanner();
+      panner.pan.setValueAtTime(pan, t0);
+    }
+
+    if (panner) {
+      osc.connect(g).connect(panner).connect(out);
+    } else {
+      osc.connect(g).connect(out);
+    }
     osc.start(t0); osc.stop(t0 + dur + 0.05);
   },
 
   /* ---------- sound effects ---------- */
 
   /** Decaying white noise through a bandpass filter; size 0..1 scales it. */
-  explosion(size = 0.5) {
+  explosion(x, size = 0.5) {
     if (!this.ctx || !this.enabled) return;
+    let pan = 0;
+    if (size === undefined && typeof x === 'number' && x <= 1.0) {
+      size = x;
+    } else {
+      pan = this._panValue(x);
+    }
     const dur = 0.4 + size * 0.9;
-    this._noise({ dur, type: 'bandpass', freq: 700 - size * 350, f1: 60, q: 0.7, gain: 0.6 + size * 0.4 });
-    this._noise({ dur: dur * 0.6, type: 'lowpass', freq: 300, f1: 50, gain: 0.5 + size * 0.5 });
-    if (size > 0.5) this._tone({ type: 'sine', f0: 90, f1: 28, dur: dur, gain: 0.7 }); // sub-bass thump
+    this._noise({ dur, type: 'bandpass', freq: 700 - size * 350, f1: 60, q: 0.7, gain: 0.6 + size * 0.4, pan });
+    this._noise({ dur: dur * 0.6, type: 'lowpass', freq: 300, f1: 50, gain: 0.5 + size * 0.5, pan });
+    if (size > 0.5) this._tone({ type: 'sine', f0: 90, f1: 28, dur: dur, gain: 0.7, pan }); // sub-bass thump
   },
 
   /** Turret launch: frequency-sweeping oscillator. */
-  launch() {
+  launch(x) {
     if (!this.ctx || !this.enabled) return;
-    this._tone({ type: 'sawtooth', f0: 650, f1: 110, dur: 0.38, gain: 0.22 });
-    this._noise({ dur: 0.25, type: 'highpass', freq: 1200, gain: 0.12 });
+    const pan = this._panValue(x);
+    this._tone({ type: 'sawtooth', f0: 650, f1: 110, dur: 0.38, gain: 0.22, pan });
+    this._noise({ dur: 0.25, type: 'highpass', freq: 1200, gain: 0.12, pan });
   },
 
-  laser() {
+  laser(x) {
     if (!this.ctx || !this.enabled) return;
-    this._tone({ type: 'square', f0: 1900, f1: 240, dur: 0.32, gain: 0.16 });
-    this._tone({ type: 'sine', f0: 2800, f1: 700, dur: 0.28, gain: 0.1 });
+    const pan = this._panValue(x);
+    this._tone({ type: 'square', f0: 1900, f1: 240, dur: 0.32, gain: 0.16, pan });
+    this._tone({ type: 'sine', f0: 2800, f1: 700, dur: 0.28, gain: 0.1, pan });
   },
 
   /** Orbital MASER lock-on: rising charge whine while the beam converges. */
-  maserCharge() {
+  maserCharge(x) {
     if (!this.ctx || !this.enabled) return;
-    this._tone({ type: 'sine', f0: 70, f1: 980, dur: 1.05, gain: 0.16 });
-    this._tone({ type: 'sawtooth', f0: 140, f1: 1960, dur: 1.05, gain: 0.05 });
+    const pan = this._panValue(x);
+    this._tone({ type: 'sine', f0: 70, f1: 980, dur: 1.05, gain: 0.16, pan });
+    this._tone({ type: 'sawtooth', f0: 140, f1: 1960, dur: 1.05, gain: 0.05, pan });
   },
 
-  bounce() { this._tone({ type: 'triangle', f0: 340, f1: 150, dur: 0.1, gain: 0.18 }); },
+  bounce(x) { 
+    const pan = this._panValue(x);
+    this._tone({ type: 'triangle', f0: 340, f1: 150, dur: 0.1, gain: 0.18, pan }); 
+  },
   click()  { this._tone({ type: 'square', f0: 850, dur: 0.05, gain: 0.08 }); },
   error()  { this._tone({ type: 'square', f0: 170, f1: 90, dur: 0.22, gain: 0.18 }); },
 
@@ -218,7 +264,9 @@ const AudioEngine = {
   },
 
   _schedule() {
-    const stepDur = 60 / this.TEMPO / 4; // 16th notes
+    // Scale tempo from 112 BPM to 145 BPM based on intensity
+    const bpm = 112 + this.intensity * (145 - 112);
+    const stepDur = 60 / bpm / 4; // 16th notes
     while (this._nextStepTime < this.ctx.currentTime + 0.12) {
       this._playStep(this._step % 32, this._nextStepTime);
       this._nextStepTime += stepDur;
@@ -266,13 +314,33 @@ const AudioEngine = {
     const osc = this.ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.value = f;
+
     const flt = this.ctx.createBiquadFilter();
-    flt.type = 'lowpass'; flt.frequency.value = 750; flt.Q.value = 2;
+    flt.type = 'lowpass';
+    flt.frequency.value = 750 + this.intensity * 1100;
+    flt.Q.value = 2 + this.intensity * 3.5;
+
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(0.12, t);
     g.gain.exponentialRampToValueAtTime(0.004, t + 0.12);
-    osc.connect(flt).connect(g).connect(this.musicGain);
+
+    osc.connect(flt);
+
+    let osc2 = null;
+    if (this.intensity > 0.25) {
+      osc2 = this.ctx.createOscillator();
+      osc2.type = 'sawtooth';
+      osc2.frequency.value = f;
+      osc2.detune.setValueAtTime(-18, t);
+      osc2.connect(flt);
+      osc.detune.setValueAtTime(12, t);
+    }
+
+    flt.connect(g).connect(this.musicGain);
     osc.start(t); osc.stop(t + 0.14);
+    if (osc2) {
+      osc2.start(t); osc2.stop(t + 0.14);
+    }
   },
 };
 

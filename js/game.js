@@ -52,14 +52,19 @@ class Game {
     this.settings.wrap = !!config.wrap;
     this.settings.sound = config.sound !== false;
     this.settings.noLevels = !!config.noLevels;
+    this.settings.weather = config.weather || 'random';
+    this.settings.mode = config.mode || 'standard';
+    if (this.settings.mode === 'windstorm') {
+      this.settings.weather = 'wtf';
+    }
     this.totalRounds = config.rounds || 6;
     this.round = 1;
     this.tanks = config.players.map((p, i) => {
       const t = new Tank({
         name: p.name,
-        color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+        color: p.type === 'behemoth' ? '#ff1100' : PLAYER_COLORS[i % PLAYER_COLORS.length],
         type: p.type,
-        cash: config.startCash !== undefined ? config.startCash : 1000,
+        cash: config.startCash !== undefined ? config.startCash : 10000,
       });
       t.gatesOff = this.settings.noLevels;
       // sandbox matches leave persistent XP profiles untouched
@@ -94,6 +99,10 @@ class Game {
   startRound() {
     this.theme = themeForRound(this.round);
     this.terrain = new Terrain();
+    if (this.settings.mode === 'windstorm') {
+      this.settings.weather = 'wtf';
+      this.terrain.generateStructures('windstorm');
+    }
     this.themeState = makeThemeState(this.theme, this.terrain.seed);
     this.projectiles = [];
     this.hazards = [];
@@ -112,12 +121,13 @@ class Game {
       t.x = Utils.clamp(slots[i], 40, W - 40);
       // flatten a small pad under the tank
       const ground = this.terrain.heightAt(t.x);
-      for (let dx = -18; dx <= 18; dx++) {
+      const pad = t.isBoss ? 28 : 18;
+      for (let dx = -pad; dx <= pad; dx++) {
         const xi = Utils.clamp(Math.round(t.x + dx), 0, W - 1);
         this.terrain.h[xi] = Utils.lerp(this.terrain.h[xi], ground, 0.85);
       }
       t.y = this.terrain.heightAt(t.x);
-      t.health = 100; t.alive = true;
+      t.health = t.isBoss ? 600 : 100; t.alive = true;
       t.vy = 0; t.falling = false; t.buried = false; t.chuteActive = false;
       t.angle = t.x < W / 2 ? 60 : 120;
       t.roundDamage = 0; t.roundKills = 0;
@@ -127,7 +137,10 @@ class Game {
       t.maxFuel = t.fuel;
       // pre-deployed shield
       t.shield = null;
-      if (t.predeployShield) {
+      if (t.isBoss) {
+        t.shield = { hp: 300, max: 300 };
+        AudioEngine.humStart();
+      } else if (t.predeployShield) {
         t.shield = { hp: 100, max: 100 };
         t.predeployShield = false;
         AudioEngine.humStart();
@@ -142,8 +155,31 @@ class Game {
   }
 
   randomizeWind() {
+    const wMode = this.settings.weather || 'random';
+    if (wMode === 'calm') {
+      this.wind = 0;
+      return;
+    }
+    if (wMode === 'windy') {
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      this.wind = sign * Utils.rand(0.6, 1.0) * this.theme.windMax;
+      return;
+    }
+    if (wMode === 'wtf') {
+      const sign = Math.random() < 0.5 ? -1 : 1;
+      this.wind = sign * Utils.rand(0.5, 3.0) * this.theme.windMax;
+      return;
+    }
     this.wind = Utils.rand(-1, 1) * this.theme.windMax;
     if (Math.abs(this.wind) < 0.4) this.wind = 0;
+  }
+
+  getWindAt(x, y, t) {
+    if (this.settings.weather !== 'wtf') {
+      return this.wind;
+    }
+    const wave = Math.sin(x * 0.004 + t * 3.5) * 11;
+    return this.wind + wave;
   }
 
   get activeTank() { return this.tanks[this.turnIdx]; }
@@ -152,6 +188,15 @@ class Game {
     this.phase = 'aim';
     this.settleTimer = 0;
     const t = this.activeTank;
+    if (t.isBoss && t.alive) {
+      if (!t.shield) {
+        t.shield = { hp: 50, max: 300 };
+      } else {
+        t.shield.max = 300;
+        t.shield.hp = Math.min(300, t.shield.hp + 50);
+      }
+      AudioEngine.shieldOn();
+    }
     if (t.isBot) this.ai.get(t).beginTurn(this);
     SaveSystem.saveMatch(this);
   }
@@ -179,10 +224,10 @@ class Game {
     // round awards
     for (const t of this.tanks) {
       if (t.alive) {
-        this._award(t, 50, 200); // survival
+        this._award(t, 50, 2000); // survival
         t.score += 100;
       }
-      if (t === winner) { this._award(t, 100, 250); t.score += 150; }
+      if (t === winner) { this._award(t, 100, 2500); t.score += 150; }
       if (!this.settings.noLevels) SaveSystem.saveProfile(t.name, t.xp);
     }
     return true;
@@ -250,7 +295,7 @@ class Game {
     this.settleTimer = 0;
     this.terrainWait = 0;
 
-    AudioEngine.launch();
+    AudioEngine.launch(tank.x);
     const m = tank.muzzle();
     // muzzle flash
     FX.ring(m.x, m.y, 22, 0.22, '#ffe9a0');
@@ -266,8 +311,22 @@ class Game {
     }
     let speed = tank.power * POWER_TO_SPEED;
     if (def.special === 'railgun') speed = Math.max(speed * 2.6, 1600); // hypervelocity
-    const p = new Projectile(def, m.x, m.y, m.dx * speed, m.dy * speed, tank, this);
-    this.projectiles.push(p);
+    if (tank.isBoss) {
+      const angles = [-0.0872665, 0, 0.0872665];
+      const s = 1.6;
+      const baseY = tank.y - TANK_H * s;
+      for (const a of angles) {
+        const rad = Utils.deg2rad(tank.angle) + a;
+        const rdx = Math.cos(rad), rdy = -Math.sin(rad);
+        const mx = tank.x + rdx * 38 * s;
+        const my = baseY + rdy * 38 * s;
+        const p = new Projectile(def, mx, my, rdx * speed, rdy * speed, tank, this);
+        this.projectiles.push(p);
+      }
+    } else {
+      const p = new Projectile(def, m.x, m.y, m.dx * speed, m.dy * speed, tank, this);
+      this.projectiles.push(p);
+    }
     FX.addShake(3);
   }
 
@@ -276,9 +335,9 @@ class Game {
   applyExplosion(x, y, def, owner, { direct = null, isSub = false } = {}) {
     const r = def.radius || 24;
     this.terrain.crater(x, y, r * 0.92);
-    FX.explosion(x, y, r);
+    FX.explosion(x, y, r, this.theme.soilTop);
     FX.addShake(def.shake || r * 0.12);
-    AudioEngine.explosion(Utils.clamp(r / 110, 0.15, 1));
+    AudioEngine.explosion(x, Utils.clamp(r / 110, 0.15, 1));
     if (def.flash) { FX.flash(1.4); FX.addShake(30); } // thermonuclear white-out
     // nuclear blasts darken the world so the fireball looks blinding
     if (def.nuclear) {
@@ -299,7 +358,7 @@ class Game {
     for (const t of this.tanks) {
       if (!t.alive) continue;
       const d = Utils.dist(x, y, t.x, t.y - 8);
-      const reach = r + TANK_RADIUS;
+      const reach = r + t.radius;
       if (d > reach) continue;
       const falloff = 1 - Math.max(0, d - r * 0.3) / (reach - r * 0.3);
       const dmg = (def.dmg || 0) * Utils.clamp(falloff, 0.08, 1);
@@ -319,14 +378,14 @@ class Game {
     // colossal central blast carves a huge crater
     this.terrain.crater(x, y, r * 0.92);
     // layered fireball bursts for a bigger, denser detonation core
-    FX.explosion(x, y, r);
-    FX.explosion(x, y, r * 0.6);
+    FX.explosion(x, y, r, this.theme.soilTop);
+    FX.explosion(x, y, r * 0.6, this.theme.soilTop);
     FX.addShake(def.shake || 64);
     FX.flash(2.4);             // brighter initial white-out
     FX.nukeDim(0.9);
     FX.ring(x, y, r * 3.2, 1.1, 'rgba(255,255,255,0.95)');
     FX.ring(x, y, r * 4.4, 1.6, 'rgba(190,255,170,0.8)');
-    AudioEngine.explosion(1);
+    AudioEngine.explosion(x, 1);
     // lingering radiation wash, expanding pulse rings, sustained secondary
     // fireballs and a slow rolling shockwave (visual + ambience)
     this.hazards.push(new NeutronPulse(x, y, this));
@@ -337,7 +396,7 @@ class Game {
       if (!t.alive) continue;
       const d = Utils.dist(x, y, t.x, t.y - 8);
       // blast (shield-absorbable) for anyone caught in the fireball
-      const reach = r + TANK_RADIUS;
+      const reach = r + t.radius;
       if (d <= reach) {
         const falloff = 1 - Math.max(0, d - r * 0.3) / (reach - r * 0.3);
         const blast = (def.dmg || 0) * Utils.clamp(falloff, 0.1, 1);
@@ -356,7 +415,7 @@ class Game {
   applyDirt(x, y, def) {
     this.terrain.mound(x, def.radius);
     FX.dirtBurst(x, y, def.radius, this.theme.soilTop);
-    AudioEngine.explosion(0.25);
+    AudioEngine.explosion(x, 0.25);
     FX.addShake(4);
     for (const t of this.tanks) if (t.alive) t._updateBuried(this.terrain);
   }
@@ -365,7 +424,7 @@ class Game {
     this.terrain.fissure(x, 14);
     FX.dirtBurst(x, y, 30, this.theme.soilTop);
     FX.addShake(10);
-    AudioEngine.explosion(0.5);
+    AudioEngine.explosion(x, 0.5);
     for (const t of this.tanks) {
       if (!t.alive) continue;
       const d = Math.abs(t.x - x);
@@ -375,7 +434,7 @@ class Game {
   }
 
   applyNapalm(x, y, owner) {
-    AudioEngine.explosion(0.45);
+    AudioEngine.explosion(x, 0.45);
     FX.addShake(5);
     for (let i = 0; i < 26; i++) {
       const a = Utils.rand(-Math.PI * 0.9, -Math.PI * 0.1);
@@ -386,7 +445,7 @@ class Game {
 
   spawnVortex(x, y, def, owner) {
     this.hazards.push(new Vortex(x, y, def, owner));
-    AudioEngine._tone({ type: 'sine', f0: 320, f1: 36, dur: 2.6, gain: 0.25 });
+    AudioEngine._tone({ type: 'sine', f0: 320, f1: 36, dur: 2.6, gain: 0.25, pan: AudioEngine._panValue(x) });
   }
 
   scheduleKineticRods(x, def, owner) {
@@ -395,7 +454,7 @@ class Game {
 
   scheduleMaser(x, y, def, owner) {
     this.hazards.push(new MaserStrike(x, y, def, owner));
-    AudioEngine.maserCharge();
+    AudioEngine.maserCharge(x);
   }
 
   /** Central damage entry point: handles shields, XP, cash, kill credit. */
@@ -405,7 +464,7 @@ class Game {
     if (owner && owner !== victim) {
       victim.lastDamager = owner;
       if (actual > 0) {
-        owner.cash += actual * 2;
+        owner.cash += actual * 20;
         owner.score += actual;
         owner.roundDamage += actual;
         this._award(owner, actual + (direct ? 30 : 0), 0);
@@ -431,16 +490,18 @@ class Game {
       if (!t.alive || t.health > 0) continue;
       t.alive = false;
       if (t.shield) { t.shield = null; AudioEngine.humStop(); }
-      FX.explosion(t.x, t.y - 8, 40);
+      FX.explosion(t.x, t.y - 8, 40, this.theme.soilTop);
       FX.addShake(10);
-      AudioEngine.explosion(0.7);
+      AudioEngine.explosion(t.x, 0.7);
       this.terrain.crater(t.x, t.y, 20);
+      t.y = this.terrain.heightAt(t.x);
+      t.falling = true;
       FX.addBubble(t.x, t.y - 52, pickDeathSaying(), 3.8, { color: '#ff9090' });
       const credit = (killer && killer !== t && killer.alive !== undefined) ? killer : t.lastDamager;
       if (credit && credit !== t) {
         credit.roundKills++;
         credit.score += 100;
-        this._award(credit, 80, 300);
+        this._award(credit, 80, 3000);
       }
     }
   }
@@ -470,7 +531,10 @@ class Game {
     let impact = null;
 
     for (let i = 0; i < maxSteps; i++) {
-      if (useWind && !windImmune) vx += this.wind * WIND_ACCEL * dt;
+      if (useWind && !windImmune) {
+        const curWind = this.settings.weather === 'wtf' ? this.getWindAt(x, y, this.time) : this.wind;
+        vx += curWind * WIND_ACCEL * dt;
+      }
       vy += GRAV * dt;
       const sp = Math.hypot(vx, vy);
       const sub = Math.max(1, Math.ceil(sp * dt / 3));
@@ -486,7 +550,7 @@ class Game {
         // tank collision
         for (const t of this.tanks) {
           if (!t.alive || t === tank) continue;
-          if (Utils.dist(x, y, t.x, t.y - 8) <= TANK_RADIUS) {
+          if (Utils.dist(x, y, t.x, t.y - 8) <= t.radius) {
             impact = { x, y, tank: t };
             done = true; break;
           }
@@ -547,7 +611,28 @@ class Game {
 
   update(dt) {
     this.time += dt;
-    if (this.phase === 'idle' || this.phase === 'over' || this.phase === 'shop') return;
+    if (this.phase === 'idle' || this.phase === 'over' || this.phase === 'shop') {
+      if (typeof AudioEngine !== 'undefined') AudioEngine.setIntensity(0);
+      return;
+    }
+
+    // Calculate real-time intensity based on min health of alive human players and wind speed
+    const humans = this.tanks.filter(t => t.alive && t.type === 'human');
+    const targetTanks = humans.length > 0 ? humans : this.tanks.filter(t => t.alive);
+    const minHp = targetTanks.length > 0 ? targetTanks.reduce((min, t) => Math.min(min, t.health), 100) : 100;
+    const hpIntensity = (100 - minHp) / 100;
+    const maxWind = (this.theme && this.theme.windMax) ? this.theme.windMax : 100;
+    const windIntensity = Math.abs(this.wind) / maxWind;
+    const windScale = this.settings.weather === 'wtf' ? 0.4 : 0.2;
+    const intensity = Math.max(hpIntensity, Math.min(1.0, windIntensity * windScale));
+    if (typeof AudioEngine !== 'undefined') {
+      AudioEngine.setIntensity(intensity);
+    }
+
+    // update sky clouds dynamically
+    if (typeof updateSky !== 'undefined') {
+      updateSky(this.themeState, dt, this.wind);
+    }
 
     // landslides relax continuously
     const terrainMoving = this.terrain.relax(dt);
@@ -555,21 +640,22 @@ class Game {
     // tank physics (falling, parachutes, fall damage)
     let anyFalling = false;
     for (const t of this.tanks) {
-      if (!t.alive) continue;
       const evt = t.updatePhysics(dt, this.terrain);
       if (t.falling) anyFalling = true;
       if (evt && evt.kind === 'fall' && evt.dmg > 0) {
-        this.damageTank(t, evt.dmg, null);
+        if (t.alive) {
+          this.damageTank(t, evt.dmg, null);
+        }
         FX.dirtBurst(t.x, t.y, 14, this.theme.soilTop);
-        AudioEngine.explosion(0.2);
+        AudioEngine.explosion(t.x, 0.2);
       }
     }
     this._checkDeaths(null);
 
     // weather + particles + hazard vortices
     const vortices = this.hazards.filter(h => h.kind === 'vortex');
-    FX.spawnWeather(dt, this.theme, this.wind);
-    FX.update(dt, this.terrain, vortices);
+    FX.spawnWeather(dt, this.theme, this.wind, this.settings.weather);
+    FX.update(dt, this.terrain, vortices, this.wind);
 
     switch (this.phase) {
       case 'aim': {
@@ -620,7 +706,7 @@ class Game {
 
   render(ctx) {
     const t = this.time;
-    drawSky(ctx, this.theme, this.themeState, t);
+    drawSky(ctx, this.theme, this.themeState, t, this.wind);
 
     const shake = FX.shakeOffset();
     ctx.save();

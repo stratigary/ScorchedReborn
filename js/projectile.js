@@ -49,7 +49,10 @@ class Projectile {
       const vyStart = this.vy; // captured before forces, for apex detection
 
       // forces
-      if (!this.windImmune) this.vx += g.wind * WIND_ACCEL * sdt;
+      if (!this.windImmune) {
+        const curWind = g.settings.weather === 'wtf' ? g.getWindAt(this.x, this.y, g.time) : g.wind;
+        this.vx += curWind * WIND_ACCEL * sdt;
+      }
       this.vy += GRAV * sdt;
 
       // homing steering
@@ -148,7 +151,8 @@ class Projectile {
     for (const t of this.game.tanks) {
       if (!t.alive) continue;
       // shield dome intercepts at its radius
-      const r = t.shield ? (26 + 16 * t.shield.hp / t.shield.max) : TANK_RADIUS;
+      const scale = t.isBoss ? 1.6 : 1.0;
+      const r = t.shield ? ((26 + 16 * t.shield.hp / t.shield.max) * scale) : t.radius;
       const d = Utils.dist(this.x, this.y, t.x, t.y - 8);
       if (t === this.owner && !this.escapedOwner) {
         // shells spawn inside the owner's dome — wait until they leave it
@@ -238,7 +242,7 @@ class Projectile {
   _bounce() {
     const g = this.game;
     this.bounces++;
-    AudioEngine.bounce();
+    AudioEngine.bounce(this.x);
     // back out of the ground
     let guard = 40;
     while (guard-- && g.terrain.isSolid(this.x, this.y)) {
@@ -281,7 +285,7 @@ class Projectile {
     // detonate on tank contact
     for (const t of g.tanks) {
       if (!t.alive || t === this.owner) continue;
-      if (Utils.dist(this.x, this.y, t.x, t.y - 8) < TANK_RADIUS + 6) { this._detonateRoll(); return; }
+      if (Utils.dist(this.x, this.y, t.x, t.y - 8) < t.radius + 6) { this._detonateRoll(); return; }
     }
     // detonate when static
     if (Math.abs(this.rollV) < 7) {
@@ -500,8 +504,8 @@ class MaserStrike {
     this.t += dt;
     if (!this.fired && this.t >= this.CONVERGE) {
       this.fired = true;
-      AudioEngine.laser();
-      AudioEngine.explosion(0.5);
+      AudioEngine.laser(this.x);
+      AudioEngine.explosion(this.x, 0.5);
       game.applyExplosion(this.x, this.y, this.def, this.owner, {});
       game.terrain.crater(this.x, this.y + 14, 11); // the beam bores deeper
       FX.ring(this.x, this.y, 70, 0.4, '#9fdcff');
@@ -590,7 +594,7 @@ class RodStrike {
       const p = new Projectile(rodDef, Utils.clamp(this.x + off, 5, W - 5), -30, 0, 1250, this.owner, game);
       p.isSub = true;
       game.projectiles.push(p);
-      AudioEngine.launch();
+      AudioEngine.launch(this.x + off);
       this.spawned++;
       this.timer = 0.18;
     }
@@ -623,8 +627,8 @@ class NeutronPulse {
     this.dead = false;
     this._motes = 0;
     this._burst = 0;
-    AudioEngine._tone({ type: 'sine', f0: 70, f1: 20, dur: 3.6, gain: 0.34 });
-    AudioEngine._noise({ dur: 3.4, type: 'bandpass', freq: 2600, q: 3, gain: 0.18, f1: 700 });
+    AudioEngine._tone({ type: 'sine', f0: 70, f1: 20, dur: 3.6, gain: 0.34, pan: AudioEngine._panValue(x) });
+    AudioEngine._noise({ dur: 3.4, type: 'bandpass', freq: 2600, q: 3, gain: 0.18, f1: 700, pan: AudioEngine._panValue(x) });
   }
 
   update(dt, game) {
@@ -636,7 +640,7 @@ class NeutronPulse {
       this._burst -= 0.09;
       const a = Math.random() * TAU;
       const rr = Utils.rand(20, 150);
-      FX.explosion(this.x + Math.cos(a) * rr, this.y + Math.sin(a) * rr * 0.6, Utils.rand(40, 95));
+      FX.explosion(this.x + Math.cos(a) * rr, this.y + Math.sin(a) * rr * 0.6, Utils.rand(40, 95), game.theme.soilTop);
       FX.addShake(10);
     }
     // radioactive fallout drifting down across the map

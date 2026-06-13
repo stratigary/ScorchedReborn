@@ -98,6 +98,24 @@ vm.runInContext(`
   if (shopOpens !== 3) throw new Error('expected 3 shop intermissions, got ' + shopOpens);
   if (gameOvers !== 1) throw new Error('expected 1 game over, got ' + gameOvers);
 
+  // exercise a 6-player match setup
+  const g6p = new Game();
+  g6p.onShop = () => g6p.nextRound();
+  g6p.newMatch({
+    players: [
+      { name: 'P1', type: 'human' },
+      { name: 'P2', type: 'amateur' },
+      { name: 'P3', type: 'pro' },
+      { name: 'P4', type: 'johnwick' },
+      { name: 'P5', type: 'novice' },
+      { name: 'P6', type: 'pro' },
+    ],
+    rounds: 2, wrap: false, sound: false,
+  });
+  if (g6p.tanks.length !== 6) throw new Error('expected 6 players, got ' + g6p.tanks.length);
+  const distinctColors = new Set(g6p.tanks.map(t => t.color));
+  if (distinctColors.size !== 6) throw new Error('expected 6 distinct colors, got ' + distinctColors.size);
+
   // exercise save / restore round-trip
   const g2 = new Game();
   g2.onShop = () => g2.nextRound();
@@ -107,12 +125,14 @@ vm.runInContext(`
   });
   if (g2.tanks[0].cash !== Infinity) throw new Error('unlimited start cash not applied');
   for (let i = 0; i < 600; i++) g2.update(dt);
+  g2.terrain.soot[500] = 0.75;
   SaveSystem.saveMatch(g2);
   const data = SaveSystem.loadMatch();
   if (!data) throw new Error('save missing');
   const g3 = new Game();
   g3.restore(data);
   if (g3.tanks[0].cash !== Infinity) throw new Error('unlimited cash lost in save/restore');
+  if (g3.terrain.soot[500] !== 0.75) throw new Error('soot array lost in save/restore');
   for (let i = 0; i < 1200; i++) { g3.update(dt); if (i % 9 === 0) g3.render(ctx); }
 
   // exercise every weapon special directly
@@ -303,6 +323,26 @@ vm.runInContext(`
   proceedFn();
   if (gc.awaitingConfirm) throw new Error('still awaiting confirm after proceed');
   if (gc.phase !== 'delay') throw new Error('weapon did not begin firing after confirmation');
+
+  // exercise weather configurations: calm, windy, wtf
+  const gw = new Game();
+  gw.onShop = () => gw.nextRound();
+  gw.newMatch({
+    players: [{ name: 'W1', type: 'human' }, { name: 'W2', type: 'human' }],
+    rounds: 2, wrap: false, sound: false, weather: 'wtf'
+  });
+  if (gw.settings.weather !== 'wtf') throw new Error('wtf weather not set in game settings');
+  gw.update(dt);
+  const wPath = gw.simulatePath(gw.tanks[0], 45, 50, true, null, 100);
+  if (!wPath.points || wPath.points.length === 0) throw new Error('wtf simulatePath failed');
+  
+  const gwc = new Game();
+  gwc.onShop = () => gwc.nextRound();
+  gwc.newMatch({
+    players: [{ name: 'W1', type: 'human' }, { name: 'W2', type: 'human' }],
+    rounds: 2, wrap: false, sound: false, weather: 'calm'
+  });
+  if (gwc.wind !== 0) throw new Error('calm weather did not force wind to 0');
 
   console.log('SMOKE OK — ticks: ' + ticks + ', shops: ' + shopOpens);
 `, sandbox, { filename: 'smoke-driver' });

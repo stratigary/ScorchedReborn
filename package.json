@@ -1,0 +1,12 @@
+{
+  "name": "scorchedreborn",
+  "version": "1.0.0",
+  "description": "Turn-based artillery battle game",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx http-server -p 8082 -c-1"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}

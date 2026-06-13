@@ -48,4 +48,4 @@ function levelForXP(xp) {
   return Math.min(lvl, MAX_LEVEL);
 }
 
-const PLAYER_COLORS = ['#ff5252', '#42a5f5', '#ffd54f', '#9ccc65'];
+const PLAYER_COLORS = ['#ff5252', '#42a5f5', '#ffd54f', '#9ccc65', '#ba68c8', '#ff9800'];

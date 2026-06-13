@@ -42,6 +42,15 @@ const AI_PROFILES = {
     weaponPick: 'heavy',
     shop: 'wick',
   },
+  behemoth: {
+    label: 'Behemoth Boss',
+    errAngle: 0.2, errPower: 0.3,
+    wind: 'sim',
+    refine: 2,
+    shieldChance: 0.8,
+    weaponPick: 'heavy',
+    shop: 'wick',
+  },
 };
 
 class AIController {
@@ -55,21 +64,75 @@ class AIController {
   }
 
   beginTurn(game) {
-    this.state = 'think';
-    this.timer = Utils.rand(0.5, 1.0);
+    const t = this.tank;
 
     // shield decision
-    const t = this.tank;
     if (!t.shield && t.ammo('shield') > 0 && Math.random() < this.profile.shieldChance) {
       t.activateShield();
     }
     this._pickWeapon(game);
+
+    // driving decision: novices don't drive tactically
+    if (this.tank.type !== 'novice' && t.fuel > 0 && !t.buried && !t.falling) {
+      const currentScore = this._evaluatePosition(game, t.x);
+      const maxDist = t.fuel / (t.hasUpgrade('engine') ? 0.09 : 0.18);
+      let bestOption = { x: t.x, score: currentScore };
+
+      const steps = [40, 80, 120, 160];
+      for (const d of steps) {
+        if (d > maxDist) break;
+
+        // Evaluate Left
+        const lx = Math.max(12, t.x - d);
+        const lScore = this._evaluatePosition(game, lx);
+        if (lScore > bestOption.score) {
+          bestOption = { x: lx, score: lScore };
+        }
+
+        // Evaluate Right
+        const rx = Math.min(W - 12, t.x + d);
+        const rScore = this._evaluatePosition(game, rx);
+        if (rScore > bestOption.score) {
+          bestOption = { x: rx, score: rScore };
+        }
+      }
+
+      if (bestOption.x !== t.x && bestOption.score > currentScore + 15) {
+        this.driveTargetX = bestOption.x;
+        this.state = 'drive';
+        return;
+      }
+    }
+
+    this.state = 'think';
+    this.timer = Utils.rand(0.5, 1.0);
     this._plan(game);
   }
 
   /** Runs every frame during this bot's aim phase. Calls game.fire() when ready. */
   update(dt, game) {
     const t = this.tank;
+    if (this.state === 'drive') {
+      const dir = Math.sign(this.driveTargetX - t.x);
+      const dist = Math.abs(this.driveTargetX - t.x);
+      if (dist > 2 && t.fuel > 0 && !t.buried && !t.falling) {
+        const lastX = t.x;
+        t.drive(dir, dt, game.terrain);
+        if (Math.abs(t.x - lastX) < 0.05) {
+          // Blocked by slope/climb limits
+          this.state = 'think';
+          this.timer = Utils.rand(0.4, 0.8);
+          this._plan(game);
+        }
+      } else {
+        // Reached target or out of fuel
+        this.state = 'think';
+        this.timer = Utils.rand(0.4, 0.8);
+        this._plan(game);
+      }
+      return;
+    }
+
     if (this.state === 'think') {
       this.timer -= dt;
       if (this.timer <= 0) this.state = 'aim';
@@ -91,11 +154,58 @@ class AIController {
     }
   }
 
+  _evaluatePosition(game, x) {
+    const terrain = game.terrain;
+    const y = terrain.heightAt(x);
+    if (x < 50 || x > W - 50) return -1000;
+    
+    // Elevation score (higher altitude is generally better, e.g. Y is smaller)
+    let score = (H - y) * 0.45;
+    
+    // Slope steepness at x
+    const yLeft = terrain.heightAt(Math.max(0, x - 12));
+    const yRight = terrain.heightAt(Math.min(W, x + 12));
+    const slope = Math.abs(yLeft - yRight);
+    score -= slope * 3.5;
+    
+    // Proximity to hazards (Vortex, Napalm)
+    for (const h of game.hazards) {
+      if (h.dead) continue;
+      const d = Math.hypot(x - h.x, y - h.y);
+      if (d < 120) {
+        score -= (120 - d) * 4.5;
+      }
+    }
+    
+    // Proximity to other tanks (avoid clustering)
+    for (const t of game.tanks) {
+      if (t === this.tank || !t.alive) continue;
+      const d = Math.abs(x - t.x);
+      if (d < 90) {
+        score -= (90 - d) * 2.5;
+      }
+    }
+    
+    return score;
+  }
+
   /* ---------- weapon selection ---------- */
 
   _pickWeapon(game) {
     const t = this.tank;
-    const owned = t.ownedWeapons();
+    let owned = t.ownedWeapons();
+
+    // If buried, do not use dirt weapons (so we don't bury ourselves more)
+    // and prefer direct/clean weapons if available to clear the dirt.
+    if (t.buried) {
+      owned = owned.filter(w => w.id !== 'dirt' && w.id !== 'megadirt');
+      const safe = owned.filter(w => w.id === 'missile' || w.id === 'railgun' || w.id === 'laser');
+      if (safe.length > 0) {
+        t.selectedWeapon = safe[0].id;
+        return;
+      }
+    }
+
     const pick = this.profile.weaponPick;
     let chosen = owned[0];
     const score = w => (w.dmg || 0) * (1 + (w.radius || 0) / 60);
@@ -194,7 +304,7 @@ class AIController {
 
 function botShop(tank, game) {
   const lvl = tank.level;
-  const affordable = it => it.price <= tank.cash && (tank.gatesOff || it.level <= lvl);
+  const affordable = it => it.price <= tank.cash && (tank.gatesOff || it.level <= lvl) && (it.maxQty === undefined || tank.ammo(it.id) < it.maxQty);
   const buyW = it => { tank.cash -= it.price; tank.inventory[it.id] = (tank.inventory[it.id] || 0) + it.qty; };
   const buyU = it => { tank.cash -= it.price; tank.upgrades[it.id] = true; };
 
@@ -203,7 +313,7 @@ function botShop(tank, game) {
   if (profile === 'cheap') {
     // novice: a few random cheap armaments
     for (let i = 0; i < 3; i++) {
-      const opts = WEAPONS.filter(w => w.price > 0 && w.price <= 300 && affordable(w));
+      const opts = WEAPONS.filter(w => w.price > 0 && w.price <= 3000 && affordable(w));
       if (!opts.length) break;
       buyW(Utils.choice(opts));
     }
@@ -215,7 +325,7 @@ function botShop(tank, game) {
     const sh = ItemCatalog.byId.shield;
     if (tank.ammo('shield') < 1 && affordable(sh)) buyW(sh);
     for (let i = 0; i < 3; i++) {
-      const opts = WEAPONS.filter(w => w.price >= 150 && w.price <= 500 && (w.dmg || 0) > 0 && affordable(w));
+      const opts = WEAPONS.filter(w => w.price >= 1500 && w.price <= 5000 && (w.dmg || 0) > 0 && affordable(w));
       if (!opts.length) break;
       buyW(Utils.choice(opts));
     }
@@ -232,13 +342,13 @@ function botShop(tank, game) {
     }
     const sh = ItemCatalog.byId.shield;
     if (tank.ammo('shield') < 1 && affordable(sh)) buyW(sh);
-    if ((tank.gatesOff || lvl >= 2) && !tank.predeployShield && tank.cash >= 550 && Math.random() < 0.5) {
+    if ((tank.gatesOff || lvl >= 2) && !tank.predeployShield && tank.cash >= 5500 && Math.random() < 0.5) {
       tank.cash -= ItemCatalog.byId.predeploy.price;
       tank.predeployShield = true;
     }
     const tiers = [...WEAPONS].filter(w => (w.dmg || 0) > 0 && w.price > 0).sort((a, b) => b.price - a.price);
     for (const w of tiers) {
-      if (affordable(w) && tank.cash - w.price >= 200) { buyW(w); if (Math.random() < 0.5) break; }
+      if (affordable(w) && tank.cash - w.price >= 2000) { buyW(w); if (Math.random() < 0.5) break; }
     }
     const pc = ItemCatalog.byId.parachute;
     if (tank.ammo('parachute') < 1 && affordable(pc)) buyW(pc);

@@ -101,7 +101,11 @@ class ShopUI {
       const qtyText = (() => {
         if (kind === 'weapon' || (kind === 'utility' && !item.checkbox)) {
           const a = t.ammo(item.id);
-          return a === Infinity ? '∞' : (a > 0 ? `x${a}` : '');
+          if (a === Infinity) return '∞';
+          if (item.maxQty !== undefined) {
+            return `x${a}/${item.maxQty}`;
+          }
+          return a > 0 ? `x${a}` : '';
         }
         return '';
       })();
@@ -126,6 +130,13 @@ class ShopUI {
 
     if (kind === 'weapon') {
       if (item.unlimited) { btn.textContent = 'OWNED'; btn.disabled = true; btn.classList.add('owned'); return; }
+      const a = t.ammo(item.id);
+      if (item.maxQty !== undefined && a >= item.maxQty) {
+        btn.textContent = `LIMIT ${item.maxQty}`;
+        btn.disabled = true;
+        btn.classList.add('owned');
+        return;
+      }
       btn.textContent = `BUY ${item.qty}`;
       btn.disabled = locked || t.cash < item.price;
       btn.onclick = () => this._purchase(() => {

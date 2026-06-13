@@ -32,6 +32,8 @@
     { on: true, name: 'Sgt. Rust', type: 'amateur' },
     { on: false, name: 'Maj. Payne', type: 'pro' },
     { on: false, name: 'Baba Yaga', type: 'johnwick' },
+    { on: false, name: 'T-800', type: 'johnwick' },
+    { on: false, name: 'Dusty Hill', type: 'amateur' },
   ];
 
   function buildSlots() {
@@ -75,18 +77,26 @@
   function startMatch() {
     AudioEngine.init();
     AudioEngine.resume();
-    const players = Array.from(elSlots.children).map(r => r._get()).filter(Boolean);
+    let players = Array.from(elSlots.children).map(r => r._get()).filter(Boolean);
     if (players.length < 2) return;
     const sound = document.getElementById('opt-sound').checked;
     AudioEngine.setEnabled(sound);
     const cashOpt = document.getElementById('opt-cash').value;
+    const mode = document.getElementById('opt-mode').value;
+
+    if (mode === 'behemoth') {
+      players.push({ name: 'THE BEHEMOTH', type: 'behemoth' });
+    }
+
     game.newMatch({
       players,
       rounds: parseInt(document.getElementById('opt-rounds').value, 10),
       wrap: document.getElementById('opt-wrap').checked,
       noLevels: document.getElementById('opt-nolevels').checked,
       startCash: cashOpt === 'unlimited' ? Infinity : parseInt(cashOpt, 10),
+      weather: document.getElementById('opt-weather').value,
       sound,
+      mode,
     });
     if (sound) AudioEngine.startMusic();
     inMenu = false;
@@ -313,6 +323,10 @@
       if (!inMenu) {
         applyHeldKeys(STEP);
         game.update(STEP);
+      } else {
+        if (typeof updateSky !== 'undefined' && menuState) {
+          updateSky(menuState, STEP, 0);
+        }
       }
       acc -= STEP;
     }
