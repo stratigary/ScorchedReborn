@@ -109,12 +109,12 @@ class Tank {
 
   /* ---------- damage ---------- */
 
-  /** Returns actual damage applied to health (after shield). */
-  takeDamage(amount) {
+  /** Returns actual damage applied to health (after shield, unless pierced). */
+  takeDamage(amount, pierceShield = false) {
     if (!this.alive) return 0;
     let dmg = amount;
     if (this.buried) dmg *= 0.5; // dirt blanket dampens blasts
-    if (this.shield) {
+    if (this.shield && !pierceShield) {
       const absorbed = Math.min(this.shield.hp, dmg);
       this.shield.hp -= absorbed;
       dmg -= absorbed;

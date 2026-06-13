@@ -183,7 +183,35 @@ const SAYINGS = {
       "It does triples. You do dying.",
       "Frogs evolved. Be afraid.",
     ],
+    neutron: [
+      "May God have mercy. I won't.",
+      "Goodbye, everyone. And I mean EVERYONE.",
+      "No cover. No shields. No mercy.",
+      "I've decided nobody gets to live.",
+      "Radiation doesn't knock first.",
+      "This is the part where you all glow.",
+      "Scorched earth? Try scorched EVERYTHING.",
+      "I am the danger. Also the fallout.",
+      "Last one breathing wins. Nobody's breathing.",
+      "Pulling the big lever. The BAD lever.",
+    ],
   },
+
+  // Shown in the confirmation dialog before a Neutron Bomb launch.
+  confirm: [
+    "This bomb does not care who your friends are. Still want to fire it?",
+    "Radiation ignores shields, armor, and last words. Proceed?",
+    "Everyone on this map is about to have a very bad day — including possibly you. Sure?",
+    "You are about to violate several intergalactic treaties. Continue?",
+    "This is the button they warned you about. Press it?",
+    "Are you ABSOLUTELY certain? There is no 'a little bit nuked.'",
+    "The cleanup crew already quit. Fire anyway?",
+    "Historians will name this moment. Are you sure you want the credit?",
+    "Last chance to be the bigger tank. ...Nah?",
+    "Pressing FIRE makes you the villain. We just want you to know that.",
+    "This will be on your permanent record. And everyone else's headstone. Go?",
+    "One does not simply un-fire a Neutron Bomb. Commit?",
+  ],
 
   death: [
     "Delete my browser history!",
@@ -240,4 +268,8 @@ function pickFireSaying(category) {
 
 function pickDeathSaying() {
   return Utils.choice(SAYINGS.death);
+}
+
+function pickConfirmMessage() {
+  return Utils.choice(SAYINGS.confirm);
 }

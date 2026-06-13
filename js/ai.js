@@ -109,7 +109,7 @@ class AIController {
     } else if (pick === 'best' || pick === 'heavy') {
       // prefer reliably-simulated ballistic heavy hitters
       const pref = pick === 'heavy'
-        ? ['thermo', 'singularity', 'kinetic', 'tacnuke', 'railgun', 'mirv', 'babynuke', 'homing', 'laser']
+        ? ['neutron', 'thermo', 'singularity', 'kinetic', 'tacnuke', 'railgun', 'mirv', 'babynuke', 'homing', 'laser']
         : ['tacnuke', 'railgun', 'mirv', 'homing', 'babynuke', 'laser', 'thermo', 'singularity'];
       chosen = null;
       for (const id of pref) {
@@ -258,7 +258,7 @@ function botShop(tank, game) {
   const pc = ItemCatalog.byId.parachute;
   while (tank.ammo('parachute') < 2 && affordable(pc)) buyW(pc);
   // heavy weapons: nuclear, singularity, orbital
-  const heavy = ['thermo', 'singularity', 'kinetic', 'laser', 'railgun', 'mirv', 'tacnuke', 'napalm', 'babynuke'];
+  const heavy = ['neutron', 'thermo', 'singularity', 'kinetic', 'laser', 'railgun', 'mirv', 'tacnuke', 'napalm', 'babynuke'];
   let spent = true;
   while (spent) {
     spent = false;

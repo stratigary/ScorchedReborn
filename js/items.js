@@ -25,8 +25,8 @@ const WEAPONS = [
     dmg: 32,  radius: 28,  bubble: 'leapfrog',    desc: 'Hops and detonates three times.' },
   { id: 'fissure',     name: 'Fissure Charge',  price: 600,  level: 3, qty: 2, special: 'fissure',
     dmg: 22,  radius: 18,  bubble: 'fissure',     desc: 'Splits the earth down to the bedrock.' },
-  { id: 'mirv',        name: 'MIRV',            price: 700,  level: 3, qty: 2, special: 'mirv',
-    dmg: 30,  radius: 26,  bubble: 'mirv',        desc: 'Splits into 5 warheads at apex.' },
+  { id: 'mirv',        name: 'MIRV',            price: 700,  level: 3, qty: 2, special: 'mirv', splitCount: 3,
+    dmg: 34,  radius: 28,  bubble: 'mirv',        desc: 'Splits into 3 warheads at apex.' },
   { id: 'laser',       name: 'Orbital MASER',   price: 800,  level: 3, qty: 2, special: 'maser',
     dmg: 60,  radius: 26,  bubble: 'laser',       desc: 'Shell marks the target; a MASER strike fires from orbit.' },
   { id: 'homing',      name: 'Homing Missile',  price: 900,  level: 4, qty: 2, special: 'homing',
@@ -39,6 +39,10 @@ const WEAPONS = [
     dmg: 70,  radius: 60,  bubble: 'singularity', desc: 'Gravity vortex draws in everything, then detonates.' },
   { id: 'thermo',      name: 'Thermonuclear',   price: 2000, level: 5, qty: 1, nuclear: true,
     dmg: 120, radius: 115, shake: 30, flash: true, bubble: 'thermo', desc: 'Map-carving apocalypse.' },
+  { id: 'neutron',     name: 'Neutron Bomb',    price: 3500, level: 5, qty: 1, nuclear: true,
+    special: 'neutron', confirm: true,
+    dmg: 130, radius: 100, radNear: 58, radFar: 24, shake: 44, flash: true, bubble: 'neutron',
+    desc: 'THE GRANDDADDY. Shield-piercing radiation scours the ENTIRE battlefield.' },
 ];
 
 const UTILITIES = [

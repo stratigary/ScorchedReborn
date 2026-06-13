@@ -86,7 +86,7 @@ vm.runInContext(`
   });
 
   const dt = 1 / 60;
-  const maxTicks = 60 * 60 * 30; // 30 simulated minutes hard cap
+  const maxTicks = 60 * 60 * 60; // 60 simulated minutes hard cap
   let ticks = 0;
   while (game.phase !== 'over' && ticks < maxTicks) {
     game.update(dt);
@@ -229,6 +229,76 @@ vm.runInContext(`
     throw new Error("attacker's own mag shield interfered with outgoing shot: hp " + hpOwnRounds);
   }
   console.log('magshield: baseline=' + hpBaseline + ' deflected=' + hpDeflected + ' ownRounds=' + hpOwnRounds);
+
+  // MIRV must split at apex into the configured number of warheads
+  const gm = new Game();
+  gm.onShop = () => gm.nextRound();
+  gm.newMatch({
+    players: [{ name: 'M1', type: 'human' }, { name: 'M2', type: 'human' }],
+    rounds: 3, wrap: false, sound: false,
+  });
+  for (let x = 0; x < 1600; x++) gm.terrain.h[x] = 700;
+  gm.terrain.dirty = true;
+  const ms = gm.tanks[0];
+  ms.x = 400; ms.y = 700; gm.tanks[1].x = 1100; gm.tanks[1].y = 700;
+  ms.inventory.mirv = 5; ms.selectedWeapon = 'mirv';
+  gm.wind = 0; gm.turnIdx = 0; gm.phase = 'aim';
+  ms.angle = 70; ms.power = 75;
+  gm.fire(ms);
+  let sawSplit = 0;
+  let guard = 60 * 20;
+  while (gm.phase !== 'aim' && gm.phase !== 'roundend' && guard-- > 0) {
+    gm.update(dt);
+    // after the parent splits, several sub-projectiles coexist
+    sawSplit = Math.max(sawSplit, gm.projectiles.filter(p => p.isSub).length);
+  }
+  const expectSplit = ItemCatalog.byId.mirv.splitCount;
+  if (sawSplit < expectSplit) {
+    throw new Error('MIRV did not split into ' + expectSplit + ' (peak sub-projectiles: ' + sawSplit + ')');
+  }
+  console.log('mirv split peak sub-projectiles: ' + sawSplit);
+
+  // Neutron Bomb: map-wide radiation that pierces energy shields
+  const gn = new Game();
+  gn.onShop = () => gn.nextRound();
+  gn.newMatch({
+    players: [{ name: 'Boom', type: 'human' }, { name: 'Far', type: 'human' }, { name: 'Near', type: 'human' }],
+    rounds: 3, wrap: false, sound: false,
+  });
+  const shooter = gn.tanks[0], far = gn.tanks[1], near = gn.tanks[2];
+  far.x = 1550; far.y = gn.terrain.heightAt(1550);
+  far.shield = { hp: 100, max: 100 }; // shielded but radiation should pierce
+  near.x = 120; near.y = gn.terrain.heightAt(120);
+  const farBefore = far.health, nearBefore = near.health;
+  gn.applyNeutron(60, gn.terrain.heightAt(60) - 6, ItemCatalog.byId.neutron, shooter);
+  if (far.health >= farBefore) throw new Error('neutron radiation did not pierce a shielded far tank');
+  // radiation bypasses the shield entirely, so the shield should be untouched
+  if (!far.shield || far.shield.hp !== 100) throw new Error('radiation drained the shield instead of bypassing it');
+  if (near.health >= nearBefore - 30) throw new Error('neutron near tank took too little damage');
+  console.log('neutron: far(shielded) ' + farBefore + '->' + far.health + ', near ' + nearBefore + '->' + near.health);
+
+  // confirmation flow: a confirm weapon must not fire until proceed() is called
+  const gc = new Game();
+  gc.onShop = () => gc.nextRound();
+  let confirmShown = 0, confirmMsg = '';
+  let proceedFn = null;
+  gc.onConfirm = (msg, def, proceed, cancel) => { confirmShown++; confirmMsg = msg; proceedFn = proceed; };
+  gc.newMatch({
+    players: [{ name: 'C1', type: 'human' }, { name: 'C2', type: 'human' }],
+    rounds: 3, wrap: false, sound: false,
+  });
+  const cs = gc.tanks[0];
+  cs.inventory.neutron = 1; cs.selectedWeapon = 'neutron';
+  gc.turnIdx = 0; gc.phase = 'aim';
+  gc.fire(cs);
+  if (confirmShown !== 1) throw new Error('neutron fire did not trigger confirmation');
+  if (!confirmMsg || confirmMsg.length < 4) throw new Error('confirmation message empty');
+  if (gc.phase !== 'aim') throw new Error('weapon launched before confirmation');
+  if (!gc.awaitingConfirm) throw new Error('game not flagged awaiting confirmation');
+  if (gc.humanCanAct) throw new Error('controls not locked during confirmation');
+  proceedFn();
+  if (gc.awaitingConfirm) throw new Error('still awaiting confirm after proceed');
+  if (gc.phase !== 'delay') throw new Error('weapon did not begin firing after confirmation');
 
   console.log('SMOKE OK — ticks: ' + ticks + ', shops: ' + shopOpens);
 `, sandbox, { filename: 'smoke-driver' });

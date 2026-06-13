@@ -38,9 +38,11 @@ python3 -m http.server 8000
   Cyberpunk Grid (scrolling binary rain, perspective grid), and Toxic Badlands —
   each with its own sky, celestial bodies, weather particles, soil fills and
   procedural textures.
-- **17 weapons** — missiles, baby/tactical/thermonuclear nukes (full white-out
-  flash + camera shake), MIRVs, orbital MASER strikes (marker shell + space
-  beam), rolling napalm droplets
+- **18 weapons** — missiles, baby/tactical/thermonuclear nukes (full white-out
+  flash + camera shake), the **Neutron Bomb** (the granddaddy: a fire
+  confirmation prompt, then a battlefield-wide radiation pulse that pierces
+  energy shields), MIRVs that split into three at apex, orbital MASER strikes
+  (marker shell + space beam), rolling napalm droplets
   that melt terrain, singularity vortices, kinetic rods from orbit, wind-immune
   railguns, dirt bombs, bouncers, rollers, homing missiles, leapfrogs, fissure
   charges — plus shields, parachutes, fuel packs, magnetic deflector shields,

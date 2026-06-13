@@ -113,6 +113,36 @@
 
   /* ---------- game callbacks ---------- */
 
+  const elConfirm = document.getElementById('confirm');
+  const elConfirmMsg = document.getElementById('confirm-msg');
+  const elConfirmTitle = document.getElementById('confirm-title');
+  const btnConfirmFire = document.getElementById('btn-confirm-fire');
+  const btnConfirmCancel = document.getElementById('btn-confirm-cancel');
+  let confirmProceed = null, confirmCancel = null;
+
+  function closeConfirm() {
+    elConfirm.classList.add('hidden');
+    confirmProceed = confirmCancel = null;
+  }
+
+  game.onConfirm = (message, def, proceed, cancel) => {
+    elConfirmTitle.textContent = `⚠ ${def.name.toUpperCase()} ⚠`;
+    elConfirmMsg.textContent = message;
+    confirmProceed = proceed;
+    confirmCancel = cancel;
+    elConfirm.classList.remove('hidden');
+  };
+
+  btnConfirmFire.addEventListener('click', () => {
+    const go = confirmProceed; closeConfirm();
+    AudioEngine.click();
+    if (go) go();
+  });
+  btnConfirmCancel.addEventListener('click', () => {
+    const stop = confirmCancel; closeConfirm();
+    if (stop) stop();
+  });
+
   game.onShop = () => shop.open(game, () => game.nextRound());
 
   game.onGameOver = (standings) => {
@@ -201,7 +231,17 @@
   window.addEventListener('keydown', (e) => {
     AudioEngine.init();
     AudioEngine.resume();
-    if (e.code === 'Escape') { setPaused(!paused); e.preventDefault(); return; }
+    if (e.code === 'Escape') {
+      // ESC backs out of a pending fire confirmation rather than pausing
+      if (!elConfirm.classList.contains('hidden')) {
+        const stop = confirmCancel; closeConfirm();
+        if (stop) stop();
+      } else {
+        setPaused(!paused);
+      }
+      e.preventDefault();
+      return;
+    }
     if (inMenu || paused) return;
     if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Tab'].includes(e.code)) e.preventDefault();
     if (keys[e.code]) return; // ignore key repeat

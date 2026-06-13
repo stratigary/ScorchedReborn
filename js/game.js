@@ -27,10 +27,12 @@ class Game {
     this._terrainCtx = this._terrainCache.getContext('2d');
     this._vignette = this._buildVignette();
     this._pendingShooter = null;
+    this.awaitingConfirm = false;
 
     // callbacks wired up by main.js
     this.onShop = null;
     this.onGameOver = null;
+    this.onConfirm = null;
   }
 
   _buildVignette() {
@@ -208,9 +210,22 @@ class Game {
 
   /** Begin the firing sequence: lock controls, show saying, beat, launch. */
   fire(tank) {
-    if (this.phase !== 'aim' || tank !== this.activeTank || !tank.alive) return;
+    if (this.phase !== 'aim' || tank !== this.activeTank || !tank.alive || this.awaitingConfirm) return;
     const def = ItemCatalog.weapon(tank.selectedWeapon);
     if (!def || tank.ammo(def.id) <= 0) { AudioEngine.error(); return; }
+    // some weapons demand a human confirmation before they'll launch
+    if (def.confirm && !tank.isBot && this.onConfirm) {
+      this.awaitingConfirm = true;
+      this.onConfirm(pickConfirmMessage(), def,
+        () => { this.awaitingConfirm = false; this._beginFire(tank, def); },
+        () => { this.awaitingConfirm = false; AudioEngine.click(); });
+      return;
+    }
+    this._beginFire(tank, def);
+  }
+
+  _beginFire(tank, def) {
+    if (this.phase !== 'aim' || tank !== this.activeTank || !tank.alive) return;
     this.phase = 'delay';
     this.delayTimer = FIRE_BEAT;
     this._pendingShooter = tank;
@@ -294,6 +309,45 @@ class Game {
     this._checkDeaths(owner);
   }
 
+  /**
+   * Neutron Bomb — the granddaddy. A big central blast (shield-absorbed,
+   * with falloff) plus a battlefield-wide radiation pulse that PIERCES energy
+   * shields and reaches every other tank on the map, scaled by distance.
+   */
+  applyNeutron(x, y, def, owner) {
+    const r = def.radius || 100;
+    // central blast carves terrain and does shield-absorbable damage nearby
+    this.terrain.crater(x, y, r * 0.9);
+    FX.explosion(x, y, r);
+    FX.addShake(def.shake || 44);
+    FX.flash(1.7);
+    FX.nukeDim(0.85);
+    AudioEngine.explosion(1);
+    // lingering radiation wash + expanding green pulse rings (visual + ambience)
+    this.hazards.push(new NeutronPulse(x, y, this));
+
+    const mapDiag = Math.hypot(W, H);
+    const radNear = def.radNear || 55, radFar = def.radFar || 22;
+    for (const t of this.tanks) {
+      if (!t.alive) continue;
+      const d = Utils.dist(x, y, t.x, t.y - 8);
+      // blast (shield-absorbable) for anyone caught in the fireball
+      const reach = r + TANK_RADIUS;
+      if (d <= reach) {
+        const falloff = 1 - Math.max(0, d - r * 0.3) / (reach - r * 0.3);
+        const blast = (def.dmg || 0) * Utils.clamp(falloff, 0.1, 1);
+        if (blast > 0) this.damageTank(t, blast, owner, d < r * 0.35);
+      }
+      // radiation reaches the whole map and ignores energy shields entirely.
+      // The owner is shielded inside their own (sealed) firing tank.
+      if (t === owner) continue;
+      const radFrac = Utils.clamp(1 - d / mapDiag, 0, 1);
+      const rad = Utils.lerp(radFar, radNear, radFrac);
+      if (rad > 0) this.damageTank(t, rad, owner, false, false, true /* pierceShield */);
+    }
+    this._checkDeaths(owner);
+  }
+
   applyDirt(x, y, def) {
     this.terrain.mound(x, def.radius);
     FX.dirtBurst(x, y, def.radius, this.theme.soilTop);
@@ -340,9 +394,9 @@ class Game {
   }
 
   /** Central damage entry point: handles shields, XP, cash, kill credit. */
-  damageTank(victim, amount, owner, direct = false, silent = false) {
+  damageTank(victim, amount, owner, direct = false, silent = false, pierceShield = false) {
     if (!victim.alive || amount <= 0) return 0;
-    const actual = victim.takeDamage(amount);
+    const actual = victim.takeDamage(amount, pierceShield);
     if (owner && owner !== victim) {
       victim.lastDamager = owner;
       if (actual > 0) {
@@ -447,7 +501,8 @@ class Game {
   /* ================= input API (humans) ================= */
 
   get humanCanAct() {
-    return this.phase === 'aim' && this.activeTank && !this.activeTank.isBot && this.activeTank.alive;
+    return this.phase === 'aim' && !this.awaitingConfirm &&
+      this.activeTank && !this.activeTank.isBot && this.activeTank.alive;
   }
 
   adjustAngle(dir, dt) {

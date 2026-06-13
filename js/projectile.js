@@ -46,6 +46,8 @@ class Projectile {
     const sdt = dt / steps;
 
     for (let s = 0; s < steps && !this.dead; s++) {
+      const vyStart = this.vy; // captured before forces, for apex detection
+
       // forces
       if (!this.windImmune) this.vx += g.wind * WIND_ACCEL * sdt;
       this.vy += GRAV * sdt;
@@ -79,12 +81,11 @@ class Projectile {
         }
       }
 
-      const prevVy = this.vy;
       this.x += this.vx * sdt;
       this.y += this.vy * sdt;
 
-      // MIRV splits at apex (vy crosses from negative=going up to >= 0)
-      if (this.def.special === 'mirv' && !this.split && prevVy < 0 && this.vy >= 0) {
+      // MIRV splits at apex: vertical velocity crosses from up (<0) to down (>=0)
+      if (this.def.special === 'mirv' && !this.split && vyStart < 0 && this.vy >= 0) {
         this._mirvSplit();
         return;
       }
@@ -161,10 +162,16 @@ class Projectile {
 
   _mirvSplit() {
     const g = this.game;
+    this.split = true;
     AudioEngine.click();
+    FX.ring(this.x, this.y, 28, 0.3, '#ffe9a0');
+    const n = this.def.splitCount || 3;
     const subDef = Object.assign({}, this.def, { special: null });
-    for (let i = -2; i <= 2; i++) {
-      const p = new Projectile(subDef, this.x, this.y, this.vx + i * 65, this.vy - Math.abs(i) * 25, this.owner, g);
+    const half = (n - 1) / 2;
+    for (let i = 0; i < n; i++) {
+      const off = i - half; // symmetric spread around the flight path
+      const p = new Projectile(subDef, this.x, this.y,
+        this.vx + off * 72, this.vy - Math.abs(off) * 28, this.owner, g);
       p.isSub = true;
       g.projectiles.push(p);
     }
@@ -214,6 +221,9 @@ class Projectile {
         break;
       case 'singularity':
         g.spawnVortex(this.x, this.y - 18, this.def, this.owner);
+        break;
+      case 'neutron':
+        g.applyNeutron(this.x, this.y, this.def, this.owner);
         break;
       case 'kinetic':
         g.scheduleKineticRods(this.x, this.def, this.owner);
@@ -292,7 +302,8 @@ class Projectile {
     ctx.globalCompositeOperation = 'lighter';
     // glowing trail, fading toward the tail
     if (this.trail.length > 1) {
-      const trailColor = this.def.special === 'homing' ? '127,212,255' : '255,220,160';
+      const trailColor = this.def.special === 'neutron' ? '125,255,90'
+        : this.def.special === 'homing' ? '127,212,255' : '255,220,160';
       for (let i = 1; i < this.trail.length; i++) {
         const a = this.trail[i - 1], b = this.trail[i];
         if (Math.abs(b.x - a.x) > W / 2) continue; // wrap seam
@@ -308,19 +319,25 @@ class Projectile {
     ctx.restore();
 
     ctx.save();
-    const big = (this.def.radius || 20) > 55;
+    const neutron = this.def.special === 'neutron';
+    const big = neutron || (this.def.radius || 20) > 55;
     // soft glow halo around the shell
-    const glowR = big ? 13 : 8;
+    const glowR = neutron ? 16 : (big ? 13 : 8);
     const glow = ctx.createRadialGradient(this.x, this.y, 0.5, this.x, this.y, glowR);
-    glow.addColorStop(0, big ? 'rgba(255,236,153,0.9)' : 'rgba(255,255,255,0.65)');
-    glow.addColorStop(1, 'rgba(255,200,80,0)');
+    if (neutron) {
+      glow.addColorStop(0, 'rgba(190,255,150,0.95)');
+      glow.addColorStop(1, 'rgba(80,220,90,0)');
+    } else {
+      glow.addColorStop(0, big ? 'rgba(255,236,153,0.9)' : 'rgba(255,255,255,0.65)');
+      glow.addColorStop(1, 'rgba(255,200,80,0)');
+    }
     ctx.fillStyle = glow;
     ctx.beginPath();
     ctx.arc(this.x, this.y, glowR, 0, TAU);
     ctx.fill();
-    ctx.fillStyle = this.def.special === 'dirt' ? '#a87b46' : (big ? '#ffec99' : '#f8f8f8');
+    ctx.fillStyle = neutron ? '#d6ffb0' : (this.def.special === 'dirt' ? '#a87b46' : (big ? '#ffec99' : '#f8f8f8'));
     ctx.beginPath();
-    ctx.arc(this.x, this.y, big ? 5 : 3.4, 0, TAU);
+    ctx.arc(this.x, this.y, neutron ? 5.5 : (big ? 5 : 3.4), 0, TAU);
     ctx.fill();
     ctx.restore();
   }
@@ -589,5 +606,81 @@ class RodStrike {
     ctx.moveTo(this.x, 0); ctx.lineTo(this.x, 40);
     ctx.stroke();
     ctx.restore();
+  }
+}
+
+class NeutronPulse {
+  /**
+   * The Neutron Bomb's signature: concentric green radiation rings sweeping
+   * across the whole battlefield, a sickly haze, and drifting fallout motes.
+   * Purely cosmetic — damage is applied once at detonation in applyNeutron.
+   */
+  constructor(x, y, game) {
+    this.kind = 'neutron';
+    this.x = x; this.y = y;
+    this.life = 2.4;
+    this.age = 0;
+    this.dead = false;
+    this._motes = 0;
+    AudioEngine._tone({ type: 'sine', f0: 60, f1: 22, dur: 2.2, gain: 0.3 });
+    AudioEngine._noise({ dur: 2.0, type: 'bandpass', freq: 2600, q: 3, gain: 0.16, f1: 900 });
+  }
+
+  update(dt, game) {
+    this.age += dt;
+    // radioactive fallout drifting down across the map
+    this._motes += dt;
+    while (this._motes > 0.015 && this.age < 1.6) {
+      this._motes -= 0.015;
+      FX.spawn({
+        x: Utils.rand(0, W), y: Utils.rand(-10, this.y),
+        vx: Utils.rand(-12, 12), vy: Utils.rand(18, 60),
+        life: Utils.rand(0.8, 1.8), size: Utils.rand(1.5, 3),
+        color: Utils.choice(['#7dff5a', '#aaff7a', '#def0a0']),
+        grav: 0.04, kind: 'spark',
+      });
+    }
+    if (this.age >= this.life) this.dead = true;
+  }
+
+  draw(ctx, t) {
+    const prog = this.age / this.life;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    // expanding shockwave-style radiation rings (several, staggered)
+    const maxR = Math.hypot(W, H) * 0.8;
+    for (let i = 0; i < 4; i++) {
+      const rt = Utils.clamp(prog * 1.3 - i * 0.16, 0, 1);
+      if (rt <= 0 || rt >= 1) continue;
+      const ease = 1 - (1 - rt) * (1 - rt);
+      ctx.globalAlpha = (1 - rt) * 0.5;
+      ctx.strokeStyle = i % 2 ? '#aaff7a' : '#39ff6a';
+      ctx.lineWidth = 2 + (1 - rt) * 7;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, maxR * ease, 0, TAU);
+      ctx.stroke();
+    }
+    // hot core that flares then fades
+    const coreA = Math.max(0, 1 - prog * 2.2);
+    if (coreA > 0) {
+      const g = ctx.createRadialGradient(this.x, this.y, 4, this.x, this.y, 130);
+      g.addColorStop(0, `rgba(220,255,200,${0.9 * coreA})`);
+      g.addColorStop(0.5, `rgba(90,255,110,${0.5 * coreA})`);
+      g.addColorStop(1, 'rgba(40,180,60,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, 130, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+    // sickly green wash over the whole field, peaking early
+    const wash = Math.max(0, 0.32 * (1 - prog * 1.4));
+    if (wash > 0.01) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      ctx.fillStyle = `rgba(40,200,70,${wash})`;
+      ctx.fillRect(-60, -60, W + 120, H + 120);
+      ctx.restore();
+    }
   }
 }
