@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scorched Reborn — Artillery Battle</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="game-wrap">
+  <canvas id="game" width="1600" height="900"></canvas>
+
+  <!-- ============ MAIN MENU ============ -->
+  <div id="menu" class="overlay">
+    <div class="panel menu-panel">
+      <h1 class="title">SCORCHED<span class="title-accent">REBORN</span></h1>
+      <p class="tagline">Turn-based artillery mayhem. Mind the wind.</p>
+
+      <div id="player-slots"></div>
+
+      <div class="menu-options">
+        <label class="opt">Rounds
+          <select id="opt-rounds">
+            <option value="3">3</option>
+            <option value="6" selected>6</option>
+            <option value="9">9</option>
+            <option value="12">12</option>
+          </select>
+        </label>
+        <label class="opt"><input type="checkbox" id="opt-wrap"> Screen wrap-around</label>
+        <label class="opt"><input type="checkbox" id="opt-sound" checked> Sound &amp; music</label>
+      </div>
+
+      <div class="menu-buttons">
+        <button id="btn-start" class="btn btn-primary">START BATTLE</button>
+        <button id="btn-resume" class="btn hidden">RESUME SAVED MATCH</button>
+      </div>
+
+      <div class="help">
+        <b>Controls:</b> ←/→ aim turret &nbsp;·&nbsp; ↑/↓ power &nbsp;·&nbsp; A/D drive
+        &nbsp;·&nbsp; Q/E weapon &nbsp;·&nbsp; X shield &nbsp;·&nbsp; SPACE fire (hold to charge) &nbsp;·&nbsp; ESC pause
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SHOP ============ -->
+  <div id="shop" class="overlay hidden">
+    <div class="panel shop-panel">
+      <div class="shop-header">
+        <div>
+          <h2 id="shop-player" class="shop-player-name">Player 1</h2>
+          <div class="shop-stats">
+            <span id="shop-cash" class="cash">$0</span>
+            <span id="shop-level" class="lvl">Lv 1</span>
+            <div class="xpbar"><div id="shop-xpfill" class="xpbar-fill"></div></div>
+          </div>
+        </div>
+        <div class="shop-round" id="shop-round">Next: Round 2</div>
+      </div>
+
+      <div class="shop-tabs">
+        <button class="tab active" data-tab="weapons">WEAPONS</button>
+        <button class="tab" data-tab="utilities">UTILITIES</button>
+        <button class="tab" data-tab="upgrades">UPGRADES</button>
+        <button class="tab" data-tab="skins">SKINS</button>
+      </div>
+
+      <div id="shop-items" class="shop-items"></div>
+
+      <div class="shop-footer">
+        <div id="shop-standings" class="standings"></div>
+        <button id="btn-shop-done" class="btn btn-primary">DONE ▸</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PAUSE ============ -->
+  <div id="pause" class="overlay hidden">
+    <div class="panel pause-panel">
+      <h2>PAUSED</h2>
+      <button id="btn-pause-resume" class="btn btn-primary">RESUME</button>
+      <label class="opt"><input type="checkbox" id="pause-wrap"> Screen wrap-around</label>
+      <label class="opt"><input type="checkbox" id="pause-sound"> Sound &amp; music</label>
+      <button id="btn-save-quit" class="btn">SAVE &amp; QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <!-- ============ GAME OVER ============ -->
+  <div id="gameover" class="overlay hidden">
+    <div class="panel gameover-panel">
+      <h2 id="go-title">VICTORY</h2>
+      <div id="go-standings" class="standings big"></div>
+      <button id="btn-go-menu" class="btn btn-primary">BACK TO MENU</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/utils.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/sayings.js"></script>
+<script src="js/items.js"></script>
+<script src="js/terrain.js"></script>
+<script src="js/themes.js"></script>
+<script src="js/effects.js"></script>
+<script src="js/tank.js"></script>
+<script src="js/projectile.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/persistence.js"></script>
+<script src="js/shop.js"></script>
+<script src="js/game.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

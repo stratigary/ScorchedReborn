@@ -1,0 +1,155 @@
+/* ===== Scorched Reborn UI ===== */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --neon: #39ff6a;
+  --neon-dim: #1d8c3c;
+  --amber: #ffd54f;
+  --danger: #ff5252;
+  --bg: #07090f;
+  --panel: rgba(10, 14, 22, 0.94);
+  --border: #2a3a55;
+  --text: #cfe3ff;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: "Lucida Console", Monaco, Consolas, monospace;
+  color: var(--text);
+}
+
+#game-wrap {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 1600px; height: 900px;
+  transform-origin: center center;
+}
+
+#game { display: block; width: 1600px; height: 900px; background: #000; }
+
+/* ===== Overlays ===== */
+.overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(2, 4, 8, 0.72);
+  z-index: 10;
+}
+.overlay.hidden { display: none; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 28px 36px;
+  box-shadow: 0 0 60px rgba(57, 255, 106, 0.08), inset 0 0 120px rgba(0,0,0,0.5);
+  max-height: 92%;
+  overflow-y: auto;
+}
+
+/* ===== Menu ===== */
+.menu-panel { width: 720px; text-align: center; }
+
+.title {
+  font-size: 52px;
+  letter-spacing: 6px;
+  color: #fff;
+  text-shadow: 0 0 18px rgba(255, 120, 40, 0.9), 0 0 40px rgba(255, 60, 20, 0.5);
+}
+.title-accent { color: var(--neon); text-shadow: 0 0 18px rgba(57,255,106,0.9); }
+.tagline { margin: 8px 0 22px; color: #7d93b8; font-size: 13px; letter-spacing: 2px; }
+
+#player-slots { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.player-slot {
+  display: flex; gap: 10px; align-items: center;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 12px;
+}
+.player-slot .dot { width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto; }
+.player-slot input[type="text"] {
+  flex: 1; background: #0b1220; border: 1px solid var(--border);
+  color: var(--text); padding: 6px 10px; border-radius: 4px; font-family: inherit;
+}
+.player-slot select, .menu-options select {
+  background: #0b1220; border: 1px solid var(--border); color: var(--text);
+  padding: 6px 8px; border-radius: 4px; font-family: inherit;
+}
+.player-slot .slot-off { opacity: 0.4; }
+
+.menu-options { display: flex; gap: 24px; justify-content: center; margin: 14px 0 20px; flex-wrap: wrap; }
+.opt { font-size: 13px; display: flex; align-items: center; gap: 6px; }
+
+.menu-buttons { display: flex; gap: 14px; justify-content: center; margin-bottom: 18px; }
+
+.btn {
+  background: #101a2c; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  font-family: inherit; font-size: 15px; letter-spacing: 2px;
+  padding: 12px 26px; cursor: pointer;
+  transition: all 0.12s ease;
+}
+.btn:hover { border-color: var(--neon); color: #fff; box-shadow: 0 0 14px rgba(57,255,106,0.35); }
+.btn-primary { background: #12331d; border-color: var(--neon-dim); color: var(--neon); }
+.btn.hidden { display: none; }
+
+.help { font-size: 11px; color: #62788f; line-height: 1.7; }
+
+/* ===== Shop ===== */
+.shop-panel { width: 980px; display: flex; flex-direction: column; max-height: 94%; }
+
+.shop-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.shop-player-name { font-size: 26px; letter-spacing: 2px; }
+.shop-stats { display: flex; gap: 16px; align-items: center; margin-top: 6px; }
+.cash { color: var(--amber); font-size: 18px; }
+.lvl { color: var(--neon); }
+.xpbar { width: 160px; height: 8px; background: #0b1220; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.xpbar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #1d8c3c, var(--neon)); }
+.shop-round { color: #7d93b8; font-size: 14px; text-align: right; }
+
+.shop-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+.tab {
+  flex: 1; padding: 10px; background: #0b1220; color: #7d93b8;
+  border: 1px solid var(--border); border-radius: 6px 6px 0 0;
+  font-family: inherit; letter-spacing: 2px; cursor: pointer;
+}
+.tab.active { background: #13233c; color: var(--neon); border-bottom-color: var(--neon); }
+
+.shop-items {
+  flex: 1; overflow-y: auto; min-height: 280px; max-height: 420px;
+  display: flex; flex-direction: column; gap: 6px; padding-right: 6px;
+}
+.shop-item {
+  display: flex; align-items: center; gap: 14px;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+  border-radius: 6px; padding: 10px 14px;
+}
+.shop-item.locked { opacity: 0.45; }
+.shop-item .item-name { width: 220px; font-size: 15px; color: #fff; }
+.shop-item .item-desc { flex: 1; font-size: 12px; color: #7d93b8; }
+.shop-item .item-qty { width: 70px; text-align: right; color: var(--neon); font-size: 13px; }
+.shop-item .item-price { width: 90px; text-align: right; color: var(--amber); }
+.shop-item .lock-tag { color: var(--danger); font-size: 12px; width: 70px; text-align: center; }
+.buy-btn {
+  background: #12331d; color: var(--neon); border: 1px solid var(--neon-dim);
+  border-radius: 4px; padding: 6px 16px; font-family: inherit; cursor: pointer; width: 90px;
+}
+.buy-btn:hover:not(:disabled) { box-shadow: 0 0 10px rgba(57,255,106,0.4); }
+.buy-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.buy-btn.owned { background: #1a2438; color: #7d93b8; border-color: var(--border); }
+
+.shop-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+.standings { font-size: 12px; color: #7d93b8; line-height: 1.6; }
+.standings.big { font-size: 16px; line-height: 2; margin: 18px 0; }
+.standings .st-name { display: inline-block; width: 180px; }
+.standings .st-score { color: var(--amber); }
+
+/* ===== Pause / Game over ===== */
+.pause-panel, .gameover-panel { width: 420px; text-align: center; display: flex; flex-direction: column; gap: 16px; }
+.pause-panel h2, .gameover-panel h2 { letter-spacing: 4px; font-size: 30px; color: #fff; text-shadow: 0 0 16px rgba(57,255,106,0.6); }
+
+/* scrollbars */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #0b1220; }
+::-webkit-scrollbar-thumb { background: #2a3a55; border-radius: 4px; }

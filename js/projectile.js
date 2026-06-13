@@ -1,0 +1,499 @@
+'use strict';
+/* ===== Projectiles & lingering hazards =====
+ * One Projectile class drives every ballistic weapon via its catalog def.
+ * Hazards (napalm droplets, singularity vortices, laser beams, rolling
+ * shells are projectiles in "rolling" mode) live in game.hazards.
+ */
+
+const POWER_TO_SPEED = 9;       // muzzle speed = power * this
+const WIND_ACCEL = 8;           // horizontal accel per wind unit
+
+class Projectile {
+  constructor(def, x, y, vx, vy, owner, game) {
+    this.def = def;
+    this.x = x; this.y = y;
+    this.vx = vx; this.vy = vy;
+    this.owner = owner;
+    this.game = game;
+    this.dead = false;
+    this.age = 0;
+    this.trail = [];
+
+    // special state
+    this.bounces = 0;
+    this.hops = def.special === 'leapfrog' ? 3 : 0;
+    this.split = false;
+    this.rolling = false;
+    this.rollV = 0;
+    this.restTimer = 0;
+    this.isSub = false;
+    this.escapedOwner = false; // left the owner's shield dome at least once
+  }
+
+  get windImmune() {
+    return this.def.special === 'railgun' || this.def.special === 'kinetic_rod';
+  }
+
+  update(dt) {
+    if (this.dead) return;
+    const g = this.game;
+    this.age += dt;
+
+    if (this.rolling) { this._updateRolling(dt); return; }
+
+    const speed = Math.hypot(this.vx, this.vy);
+    const steps = Math.max(1, Math.ceil(speed * dt / 3)); // <=3px per substep
+    const sdt = dt / steps;
+
+    for (let s = 0; s < steps && !this.dead; s++) {
+      // forces
+      if (!this.windImmune) this.vx += g.wind * WIND_ACCEL * sdt;
+      this.vy += GRAV * sdt;
+
+      // homing steering
+      if (this.def.special === 'homing' && this.age > 0.55) this._steer(sdt);
+
+      // singularity vortices pull shells too
+      for (const hz of g.hazards) {
+        if (hz.kind !== 'vortex') continue;
+        const dx = hz.x - this.x, dy = hz.y - this.y;
+        const d = Math.hypot(dx, dy);
+        if (d < hz.r * 3 && d > 6) {
+          const f = hz.pull * 90 / Math.max(30, d);
+          this.vx += dx / d * f * sdt;
+          this.vy += dy / d * f * sdt;
+        }
+      }
+
+      // magnetic shields deflect enemy shells
+      for (const t of g.tanks) {
+        if (!t.alive || t === this.owner || !t.hasUpgrade('magshield')) continue;
+        const dx = this.x - t.x, dy = this.y - (t.y - 10);
+        const d = Math.hypot(dx, dy);
+        if (d < 95 && d > 1) {
+          const f = 2600 / Math.max(20, d);
+          this.vx += dx / d * f * sdt;
+          this.vy += dy / d * f * sdt;
+        }
+      }
+
+      const prevVy = this.vy;
+      this.x += this.vx * sdt;
+      this.y += this.vy * sdt;
+
+      // MIRV splits at apex (vy crosses from negative=going up to >= 0)
+      if (this.def.special === 'mirv' && !this.split && prevVy < 0 && this.vy >= 0) {
+        this._mirvSplit();
+        return;
+      }
+
+      // screen edges
+      if (g.settings.wrap) {
+        if (this.x < 0) this.x += W;
+        else if (this.x >= W) this.x -= W;
+      } else if (this.x < -250 || this.x > W + 250) {
+        this.dead = true;
+        return;
+      }
+      if (this.y > H + 100) { this.dead = true; return; }
+
+      // tank hit?
+      const hitTank = this._checkTankHit();
+      if (hitTank) {
+        this._impact(hitTank);
+        return;
+      }
+
+      // terrain hit?
+      if (this.y > 0 && g.terrain.isSolid(this.x, this.y)) {
+        this._impact(null);
+        return;
+      }
+    }
+
+    // smoke / glow trail
+    if (this.trail.length === 0 || Utils.dist(this.x, this.y, this.trail[this.trail.length - 1].x, this.trail[this.trail.length - 1].y) > 8) {
+      this.trail.push({ x: this.x, y: this.y });
+      if (this.trail.length > 26) this.trail.shift();
+    }
+  }
+
+  _steer(sdt) {
+    const g = this.game;
+    let best = null, bd = 1e9;
+    for (const t of g.tanks) {
+      if (!t.alive || t === this.owner) continue;
+      const d = Utils.dist(this.x, this.y, t.x, t.y);
+      if (d < bd) { bd = d; best = t; }
+    }
+    if (!best) return;
+    const speed = Math.hypot(this.vx, this.vy) || 1;
+    const cur = Math.atan2(this.vy, this.vx);
+    const want = Math.atan2((best.y - 8) - this.y, best.x - this.x);
+    let diff = want - cur;
+    while (diff > Math.PI) diff -= TAU;
+    while (diff < -Math.PI) diff += TAU;
+    const maxTurn = 2.6 * sdt;
+    const turn = Utils.clamp(diff, -maxTurn, maxTurn);
+    const na = cur + turn;
+    this.vx = Math.cos(na) * speed;
+    this.vy = Math.sin(na) * speed;
+    if (Math.random() < 0.5) FX.sparkTrail(this.x, this.y, '#7fd4ff');
+  }
+
+  _checkTankHit() {
+    for (const t of this.game.tanks) {
+      if (!t.alive) continue;
+      // shield dome intercepts at its radius
+      const r = t.shield ? (26 + 16 * t.shield.hp / t.shield.max) : TANK_RADIUS;
+      const d = Utils.dist(this.x, this.y, t.x, t.y - 8);
+      if (t === this.owner && !this.escapedOwner) {
+        // shells spawn inside the owner's dome — wait until they leave it
+        if (d > r + 8) this.escapedOwner = true;
+        continue;
+      }
+      if (d <= r) return t;
+    }
+    return null;
+  }
+
+  _mirvSplit() {
+    const g = this.game;
+    AudioEngine.click();
+    const subDef = Object.assign({}, this.def, { special: null });
+    for (let i = -2; i <= 2; i++) {
+      const p = new Projectile(subDef, this.x, this.y, this.vx + i * 65, this.vy - Math.abs(i) * 25, this.owner, g);
+      p.isSub = true;
+      g.projectiles.push(p);
+    }
+    this.dead = true;
+  }
+
+  _impact(hitTank) {
+    const g = this.game;
+    const sp = this.def.special;
+
+    if (sp === 'bouncer' && !hitTank && this.bounces < 3) {
+      this._bounce();
+      return;
+    }
+    if (sp === 'roller' && !hitTank) {
+      this._startRolling();
+      return;
+    }
+    if (sp === 'leapfrog') {
+      g.applyExplosion(this.x, this.y, this.def, this.owner, { direct: hitTank });
+      this.hops--;
+      if (this.hops > 0 && !hitTank) {
+        const dir = Math.sign(this.vx) || 1;
+        const hop = new Projectile(this.def, this.x, this.y - 6, dir * Math.max(90, Math.abs(this.vx) * 0.7), -330, this.owner, g);
+        hop.hops = this.hops;
+        g.projectiles.push(hop);
+      }
+      this.dead = true;
+      return;
+    }
+
+    switch (sp) {
+      case 'dirt':
+        g.applyDirt(this.x, this.y, this.def);
+        break;
+      case 'fissure':
+        g.applyFissure(this.x, this.y, this.def, this.owner);
+        break;
+      case 'napalm':
+        g.applyNapalm(this.x, this.y, this.owner);
+        break;
+      case 'singularity':
+        g.spawnVortex(this.x, this.y - 18, this.def, this.owner);
+        break;
+      case 'kinetic':
+        g.scheduleKineticRods(this.x, this.def, this.owner);
+        g.applyExplosion(this.x, this.y, { dmg: 12, radius: 14 }, this.owner, {});
+        break;
+      default:
+        g.applyExplosion(this.x, this.y, this.def, this.owner, { direct: hitTank, isSub: this.isSub });
+    }
+    this.dead = true;
+  }
+
+  _bounce() {
+    const g = this.game;
+    this.bounces++;
+    AudioEngine.bounce();
+    // back out of the ground
+    let guard = 40;
+    while (guard-- && g.terrain.isSolid(this.x, this.y)) {
+      this.x -= this.vx * 0.002;
+      this.y -= this.vy * 0.002;
+    }
+    const n = g.terrain.normalAt(this.x);
+    const dot = this.vx * n.x + this.vy * n.y;
+    this.vx = (this.vx - 2 * dot * n.x) * 0.6;
+    this.vy = (this.vy - 2 * dot * n.y) * 0.6;
+    this.y -= 1.5;
+  }
+
+  _startRolling() {
+    const g = this.game;
+    this.rolling = true;
+    this.y = g.terrain.heightAt(this.x) - 4;
+    this.rollV = Utils.clamp(this.vx * 0.45, -160, 160);
+    this.restTimer = 0;
+  }
+
+  _updateRolling(dt) {
+    const g = this.game;
+    const slope = g.terrain.slopeAt(this.x); // dy/dx: positive = downhill to the right
+    this.rollV += slope * 540 * dt;
+    this.rollV *= (1 - 0.55 * dt);           // rolling friction
+    this.x += this.rollV * dt;
+    if (g.settings.wrap) this.x = Utils.wrapX(this.x);
+    else if (this.x < 4 || this.x > W - 4) { this._detonateRoll(); return; }
+    this.y = g.terrain.heightAt(this.x) - 4;
+    this.age += dt;
+
+    // detonate on tank contact
+    for (const t of g.tanks) {
+      if (!t.alive || t === this.owner) continue;
+      if (Utils.dist(this.x, this.y, t.x, t.y - 8) < TANK_RADIUS + 6) { this._detonateRoll(); return; }
+    }
+    // detonate when static
+    if (Math.abs(this.rollV) < 7) {
+      this.restTimer += dt;
+      if (this.restTimer > 0.5) { this._detonateRoll(); return; }
+    } else this.restTimer = 0;
+    if (this.age > 10) this._detonateRoll();
+    if (Math.random() < 0.3) FX.sparkTrail(this.x, this.y, '#ffd080');
+  }
+
+  _detonateRoll() {
+    this.game.applyExplosion(this.x, this.y, this.def, this.owner, {});
+    this.dead = true;
+  }
+
+  draw(ctx) {
+    // trail
+    if (this.trail.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = this.def.special === 'homing' ? 'rgba(127,212,255,0.5)' : 'rgba(255,255,255,0.30)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        const a = this.trail[i - 1], b = this.trail[i];
+        if (Math.abs(b.x - a.x) > W / 2) { ctx.moveTo(b.x, b.y); continue; } // wrap seam
+        ctx.lineTo(b.x, b.y);
+      }
+      ctx.lineTo(this.x, this.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.save();
+    const big = (this.def.radius || 20) > 55;
+    ctx.fillStyle = this.def.special === 'dirt' ? '#a87b46' : (big ? '#ffec99' : '#f2f2f2');
+    if (big) { ctx.shadowColor = '#ffcc44'; ctx.shadowBlur = 10; }
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, big ? 5 : 3.4, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* ===== Hazards ===== */
+
+class NapalmDrop {
+  constructor(x, y, vx, vy, owner) {
+    this.kind = 'napalm';
+    this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+    this.owner = owner;
+    this.life = Utils.rand(2.6, 4.2);
+    this.grounded = false;
+    this.dead = false;
+    this._dmgAcc = 0; // burn damage accumulates so rounding can't zero it out
+  }
+
+  update(dt, game) {
+    this.life -= dt;
+    if (this.life <= 0) { this.dead = true; return; }
+    const ter = game.terrain;
+    if (!this.grounded) {
+      this.vy += GRAV * dt;
+      this.vx += game.wind * 3 * dt;
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if (this.x < 0 || this.x >= W) { this.dead = true; return; }
+      if (ter.isSolid(this.x, this.y)) {
+        this.grounded = true;
+        this.y = ter.heightAt(this.x);
+        this.vx = Utils.clamp(this.vx * 0.3, -60, 60);
+      }
+    } else {
+      // roll downhill along the surface, melting terrain
+      const slope = ter.slopeAt(this.x);
+      this.vx += slope * 320 * dt;
+      this.vx *= (1 - 0.8 * dt);
+      this.x += this.vx * dt;
+      if (this.x < 0 || this.x >= W) { this.dead = true; return; }
+      this.y = ter.heightAt(this.x);
+      ter.melt(this.x, 7 * dt);
+    }
+    // burn nearby tanks (accumulate fractional damage, apply in chunks)
+    for (const t of game.tanks) {
+      if (!t.alive) continue;
+      if (Utils.dist(this.x, this.y, t.x, t.y - 6) < 18) {
+        this._dmgAcc += 13 * dt;
+        if (this._dmgAcc >= 2) {
+          game.damageTank(t, this._dmgAcc, this.owner, false, true);
+          this._dmgAcc = 0;
+        }
+        break; // one drop burns one tank at a time
+      }
+    }
+    if (Math.random() < 0.35) {
+      FX.spawn({
+        x: this.x, y: this.y - 2, vx: Utils.rand(-8, 8), vy: Utils.rand(-45, -15),
+        life: 0.4, size: Utils.rand(1.5, 3), color: Utils.choice(['#ff9a2a', '#ffd040', '#ff5a1a']),
+        grav: -0.1, kind: 'spark',
+      });
+    }
+  }
+
+  draw(ctx) {
+    ctx.fillStyle = '#ff8a20';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y - 1.5, 2.6, 0, TAU);
+    ctx.fill();
+  }
+}
+
+class Vortex {
+  constructor(x, y, def, owner) {
+    this.kind = 'vortex';
+    this.x = x; this.y = y;
+    this.def = def;
+    this.owner = owner;
+    this.r = 120;
+    this.pull = 95;
+    this.life = 2.8;
+    this.age = 0;
+    this.dead = false;
+  }
+
+  update(dt, game) {
+    this.age += dt;
+    this.life -= dt;
+    // drag tanks toward the singularity
+    for (const t of game.tanks) {
+      if (!t.alive) continue;
+      const dx = this.x - t.x;
+      const d = Math.abs(dx);
+      if (d < this.r * 1.6 && d > 4) {
+        t.x += Math.sign(dx) * Math.min(60 * dt * (this.r / Math.max(50, d)), d);
+        t.x = Utils.clamp(t.x, 10, W - 10);
+        const ground = game.terrain.heightAt(t.x);
+        if (ground > t.y) { t.falling = true; } else { t.y = ground; }
+      }
+    }
+    // swirl particles
+    if (Math.random() < 0.7) {
+      const a = Math.random() * TAU;
+      const rr = Utils.rand(this.r * 0.5, this.r * 1.3);
+      FX.spawn({
+        x: this.x + Math.cos(a) * rr, y: this.y + Math.sin(a) * rr,
+        vx: -Math.sin(a) * 120, vy: Math.cos(a) * 120,
+        life: 0.6, size: 2, color: Utils.choice(['#bf7fff', '#7f9fff', '#ffffff']),
+        grav: 0, kind: 'spark',
+      });
+    }
+    if (this.life <= 0) {
+      this.dead = true;
+      game.applyExplosion(this.x, this.y, this.def, this.owner, {});
+      FX.addShake(14);
+    }
+  }
+
+  draw(ctx, t) {
+    ctx.save();
+    const wob = 1 + 0.06 * Math.sin(t * 9);
+    const g = ctx.createRadialGradient(this.x, this.y, 2, this.x, this.y, 46 * wob);
+    g.addColorStop(0, 'rgba(0,0,0,0.96)');
+    g.addColorStop(0.55, 'rgba(60,20,110,0.8)');
+    g.addColorStop(1, 'rgba(120,60,200,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 46 * wob, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(190,140,255,0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y, 52 * wob, 14 * wob, t * 2.2, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class LaserBeamFX {
+  constructor(x0, y0, x1, y1) {
+    this.kind = 'laserfx';
+    this.x0 = x0; this.y0 = y0; this.x1 = x1; this.y1 = y1;
+    this.life = 0.4;
+    this.dead = false;
+  }
+  update(dt) { this.life -= dt; if (this.life <= 0) this.dead = true; }
+  draw(ctx) {
+    const a = Utils.clamp(this.life / 0.4, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = '#ff3050';
+    ctx.shadowColor = '#ff2040';
+    ctx.shadowBlur = 16;
+    ctx.lineWidth = 5 * a + 1;
+    ctx.beginPath();
+    ctx.moveTo(this.x0, this.y0);
+    ctx.lineTo(this.x1, this.y1);
+    ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2 * a;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class RodStrike {
+  /** Schedules kinetic rods dropping from orbit after a marking delay. */
+  constructor(x, def, owner) {
+    this.kind = 'rods';
+    this.x = x;
+    this.def = def;
+    this.owner = owner;
+    this.timer = 0.5;
+    this.spawned = 0;
+    this.dead = false;
+  }
+  update(dt, game) {
+    this.timer -= dt;
+    if (this.timer <= 0 && this.spawned < 3) {
+      const off = (this.spawned - 1) * 38;
+      const rodDef = Object.assign({}, this.def, { special: 'kinetic_rod' });
+      const p = new Projectile(rodDef, Utils.clamp(this.x + off, 5, W - 5), -30, 0, 1250, this.owner, game);
+      p.isSub = true;
+      game.projectiles.push(p);
+      AudioEngine.launch();
+      this.spawned++;
+      this.timer = 0.18;
+    }
+    if (this.spawned >= 3) this.dead = true;
+  }
+  draw(ctx, t) {
+    // target marker
+    ctx.save();
+    ctx.globalAlpha = 0.5 + 0.5 * Math.sin(t * 12);
+    ctx.strokeStyle = '#ff4444';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(this.x, 0); ctx.lineTo(this.x, 40);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
