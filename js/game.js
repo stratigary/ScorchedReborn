@@ -48,7 +48,23 @@ class Game {
     this.ai.clear();
     for (const t of this.tanks) if (t.isBot) this.ai.set(t, new AIController(t));
     FX.reset();
+    // pre-round armory visit: everyone shops before the first shell flies
+    this._matchStarted = false;
+    this.phase = 'shop';
+    for (const t of this.tanks) if (t.isBot) botShop(t, this);
+    if (this.onShop) this.onShop(); else this.nextRound();
+  }
+
+  /** Called by the shop UI when every human is done (also starts round 1). */
+  nextRound() {
+    if (this._matchStarted) this.round++;
+    else this._matchStarted = true;
     this.startRound();
+  }
+
+  /** The round the next shop intermission is buying for. */
+  upcomingRound() {
+    return this._matchStarted ? this.round + 1 : this.round;
   }
 
   startRound() {
@@ -155,12 +171,6 @@ class Game {
     for (const t of this.tanks) if (t.isBot) botShop(t, this);
     SaveSystem.saveMatch(this);
     if (this.onShop) this.onShop();
-  }
-
-  /** Called by the shop UI when every human is done. */
-  nextRound() {
-    this.round++;
-    this.startRound();
   }
 
   endMatch() {
@@ -775,6 +785,7 @@ class Game {
   /* ================= save / restore ================= */
 
   restore(data) {
+    this._matchStarted = true;
     this.settings = Object.assign({ wrap: false, sound: true }, data.settings);
     this.round = data.round;
     this.totalRounds = data.totalRounds;

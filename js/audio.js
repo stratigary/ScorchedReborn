@@ -9,6 +9,9 @@ const AudioEngine = {
   sfxGain: null,
   musicGain: null,
   enabled: true,
+  sfxVol: 1,      // 0..1, user-set effects volume
+  musicVol: 0.5,  // 0..1, user-set music volume
+  VOL_KEY: 'scorched_reborn_vol_v1',
   _noiseBuf: null,
   _musicTimer: null,
   _step: 0,
@@ -31,11 +34,11 @@ const AudioEngine = {
     this.master.connect(this.ctx.destination);
 
     this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 1;
+    this.sfxGain.gain.value = this.sfxVol;
     this.sfxGain.connect(this.master);
 
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.32;
+    this.musicGain.gain.value = this.musicVol * 0.65;
     this.musicGain.connect(this.master);
 
     // 1 second of cached white noise, reused by every percussive sound.
@@ -48,6 +51,34 @@ const AudioEngine = {
   setEnabled(on) {
     this.enabled = on;
     if (this.master) this.master.gain.value = on ? 0.5 : 0;
+  },
+
+  setSfxVolume(v) {
+    this.sfxVol = Utils.clamp(v, 0, 1);
+    if (this.sfxGain) this.sfxGain.gain.value = this.sfxVol;
+    this._persistVolumes();
+  },
+
+  setMusicVolume(v) {
+    this.musicVol = Utils.clamp(v, 0, 1);
+    if (this.musicGain) this.musicGain.gain.value = this.musicVol * 0.65;
+    this._persistVolumes();
+  },
+
+  _persistVolumes() {
+    try {
+      localStorage.setItem(this.VOL_KEY, JSON.stringify({ sfx: this.sfxVol, music: this.musicVol }));
+    } catch (e) { /* storage blocked */ }
+  },
+
+  loadVolumes() {
+    try {
+      const v = JSON.parse(localStorage.getItem(this.VOL_KEY));
+      if (v) {
+        if (typeof v.sfx === 'number') this.sfxVol = Utils.clamp(v.sfx, 0, 1);
+        if (typeof v.music === 'number') this.musicVol = Utils.clamp(v.music, 0, 1);
+      }
+    } catch (e) { /* missing / corrupt */ }
   },
 
   resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); },
@@ -237,3 +268,5 @@ const AudioEngine = {
     osc.start(t); osc.stop(t + 0.14);
   },
 };
+
+AudioEngine.loadVolumes();

@@ -66,7 +66,8 @@ class ShopUI {
     this.elCash.textContent = Utils.money(t.cash);
     this.elLevel.textContent = `Lv ${t.level}${t.level >= MAX_LEVEL ? ' (MAX)' : ''}`;
     this.elXpFill.style.width = `${Math.round(t.xpProgress() * 100)}%`;
-    this.elRound.textContent = `Next: Round ${this.game.round + 1} — ${themeForRound(this.game.round + 1).name}`;
+    const next = this.game.upcomingRound();
+    this.elRound.textContent = `Next: Round ${next} — ${themeForRound(next).name}`;
   }
 
   renderStandings() {

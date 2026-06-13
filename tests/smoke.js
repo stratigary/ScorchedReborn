@@ -94,11 +94,13 @@ vm.runInContext(`
     ticks++;
   }
   if (game.phase !== 'over') throw new Error('match never finished; phase=' + game.phase + ' round=' + game.round);
-  if (shopOpens !== 2) throw new Error('expected 2 shop intermissions, got ' + shopOpens);
+  // pre-round-1 shop + 2 intermissions for a 3-round match
+  if (shopOpens !== 3) throw new Error('expected 3 shop intermissions, got ' + shopOpens);
   if (gameOvers !== 1) throw new Error('expected 1 game over, got ' + gameOvers);
 
   // exercise save / restore round-trip
   const g2 = new Game();
+  g2.onShop = () => g2.nextRound();
   g2.newMatch({
     players: [{ name: 'A', type: 'pro' }, { name: 'B', type: 'johnwick' }],
     rounds: 6, wrap: false, sound: false,
@@ -113,6 +115,7 @@ vm.runInContext(`
 
   // exercise every weapon special directly
   const g4 = new Game();
+  g4.onShop = () => g4.nextRound();
   g4.newMatch({
     players: [{ name: 'X', type: 'human' }, { name: 'Y', type: 'novice' }],
     rounds: 6, wrap: false, sound: false,
@@ -135,6 +138,20 @@ vm.runInContext(`
     if (guard <= 0) throw new Error('weapon ' + w.id + ' never settled');
     if (g4.phase !== 'aim') break; // round ended mid-test; fine
   }
+
+  // dirt bombs must bury tanks under the mound, not lift them on top of it
+  const g5 = new Game();
+  g5.onShop = () => g5.nextRound();
+  g5.newMatch({
+    players: [{ name: 'D1', type: 'human' }, { name: 'D2', type: 'novice' }],
+    rounds: 3, wrap: false, sound: false,
+  });
+  const victim = g5.tanks[1];
+  const yBefore = victim.y;
+  g5.applyDirt(victim.x, victim.y - 10, ItemCatalog.byId.megadirt);
+  for (let i = 0; i < 30; i++) g5.update(dt);
+  if (victim.y < yBefore - 2) throw new Error('dirt bomb lifted the tank: y ' + yBefore + ' -> ' + victim.y);
+  if (!victim.buried) throw new Error('tank not flagged buried under mega dirt mound');
 
   console.log('SMOKE OK — ticks: ' + ticks + ', shops: ' + shopOpens);
 `, sandbox, { filename: 'smoke-driver' });

@@ -135,6 +135,28 @@
 
   /* ---------- pause ---------- */
 
+  const sliderMusic = document.getElementById('pause-music');
+  const sliderSfx = document.getElementById('pause-sfx');
+  const sliderMusicVal = document.getElementById('pause-music-val');
+  const sliderSfxVal = document.getElementById('pause-sfx-val');
+
+  function syncVolumeSliders() {
+    sliderMusic.value = Math.round(AudioEngine.musicVol * 100);
+    sliderSfx.value = Math.round(AudioEngine.sfxVol * 100);
+    sliderMusicVal.textContent = sliderMusic.value;
+    sliderSfxVal.textContent = sliderSfx.value;
+  }
+
+  sliderMusic.addEventListener('input', () => {
+    AudioEngine.setMusicVolume(sliderMusic.value / 100);
+    sliderMusicVal.textContent = sliderMusic.value;
+  });
+  sliderSfx.addEventListener('input', () => {
+    AudioEngine.setSfxVolume(sliderSfx.value / 100);
+    sliderSfxVal.textContent = sliderSfx.value;
+  });
+  sliderSfx.addEventListener('change', () => AudioEngine.click()); // audible preview
+
   function setPaused(on) {
     if (inMenu || game.phase === 'over') return;
     paused = on;
@@ -142,6 +164,7 @@
     if (on) {
       document.getElementById('pause-wrap').checked = game.settings.wrap;
       document.getElementById('pause-sound').checked = game.settings.sound;
+      syncVolumeSliders();
     }
   }
 

@@ -19,7 +19,8 @@ const SaveSystem = {
   hasSave() { return !!this._get(this.SAVE_KEY); },
 
   saveMatch(game) {
-    if (!game || game.phase === 'over') return;
+    // no terrain yet during the pre-round-1 shop — nothing worth saving
+    if (!game || !game.terrain || game.phase === 'over') return;
     const data = {
       version: 1,
       settings: game.settings,

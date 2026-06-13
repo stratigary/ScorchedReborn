@@ -149,8 +149,9 @@ class Tank {
       this.y = Math.min(ground, this.y + this.vy * dt);
       if (this.y >= ground) return this._land(terrain);
     } else {
-      // on (or inside) the ground
-      this.y = ground;
+      // On the ground. If soil piled up ABOVE us (dirt bomb / landslide), stay
+      // put — we are buried under the mound, not lifted on top of it.
+      if (ground >= this.y - 1.5) this.y = ground;
       this.falling = false;
       this.vy = 0;
     }

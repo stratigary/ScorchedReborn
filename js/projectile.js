@@ -392,7 +392,9 @@ class Vortex {
         t.x += Math.sign(dx) * Math.min(60 * dt * (this.r / Math.max(50, d)), d);
         t.x = Utils.clamp(t.x, 10, W - 10);
         const ground = game.terrain.heightAt(t.x);
-        if (ground > t.y) { t.falling = true; } else { t.y = ground; }
+        if (ground > t.y) t.falling = true;
+        else if (ground >= t.y - 1.5) t.y = ground; // don't pop buried tanks up
+        t._updateBuried(game.terrain);
       }
     }
     // swirl particles
