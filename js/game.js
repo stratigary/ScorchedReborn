@@ -235,14 +235,6 @@ class Game {
     this.settleTimer = 0;
     this.terrainWait = 0;
 
-    if (def.special === 'laser') {
-      AudioEngine.laser();
-      const lm = tank.muzzle();
-      FX.ring(lm.x, lm.y, 26, 0.25, '#ff8090');
-      this.applyLaser(tank, def);
-      return;
-    }
-
     AudioEngine.launch();
     const m = tank.muzzle();
     // muzzle flash
@@ -342,33 +334,9 @@ class Game {
     this.hazards.push(new RodStrike(x, def, owner));
   }
 
-  applyLaser(tank, def) {
-    const m = tank.muzzle();
-    let x = m.x, y = m.y;
-    let budget = 340;            // px of dirt the beam can cut through
-    const hitSet = new Set();
-    const step = 4;
-    let steps = 0;
-    while (steps++ < 900 && budget > 0) {
-      x += m.dx * step;
-      y += m.dy * step;
-      if (x < -10 || x > W + 10 || y < -200 || y >= BEDROCK_Y) break;
-      // damage tanks near the beam (once each)
-      for (const t of this.tanks) {
-        if (!t.alive || t === tank || hitSet.has(t)) continue;
-        if (Utils.dist(x, y, t.x, t.y - 8) < 17) {
-          hitSet.add(t);
-          this.damageTank(t, def.dmg, tank, true);
-        }
-      }
-      if (y > 0 && this.terrain.isSolid(x, y)) {
-        this.terrain.crater(x, y, 8);
-        budget -= step * 2.2;
-      }
-    }
-    this.hazards.push(new LaserBeamFX(m.x, m.y, x, y));
-    FX.addShake(6);
-    this._checkDeaths(tank);
+  scheduleMaser(x, y, def, owner) {
+    this.hazards.push(new MaserStrike(x, y, def, owner));
+    AudioEngine.maserCharge();
   }
 
   /** Central damage entry point: handles shields, XP, cash, kill credit. */
@@ -697,7 +665,6 @@ class Game {
     const hasWeather = tank.hasUpgrade('weather');
     if (!hasBasic && !hasReticle && !hasWeather) return;
     const def = ItemCatalog.weapon(tank.selectedWeapon);
-    if (def.special === 'laser') return;
     const path = this.simulatePath(tank, tank.angle, tank.power, hasWeather, def, hasBasic ? 420 : 300);
 
     ctx.save();

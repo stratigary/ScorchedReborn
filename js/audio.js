@@ -141,6 +141,13 @@ const AudioEngine = {
     this._tone({ type: 'sine', f0: 2800, f1: 700, dur: 0.28, gain: 0.1 });
   },
 
+  /** Orbital MASER lock-on: rising charge whine while the beam converges. */
+  maserCharge() {
+    if (!this.ctx || !this.enabled) return;
+    this._tone({ type: 'sine', f0: 70, f1: 980, dur: 1.05, gain: 0.16 });
+    this._tone({ type: 'sawtooth', f0: 140, f1: 1960, dur: 1.05, gain: 0.05 });
+  },
+
   bounce() { this._tone({ type: 'triangle', f0: 340, f1: 150, dur: 0.1, gain: 0.18 }); },
   click()  { this._tone({ type: 'square', f0: 850, dur: 0.05, gain: 0.08 }); },
   error()  { this._tone({ type: 'square', f0: 170, f1: 90, dur: 0.22, gain: 0.18 }); },

@@ -141,18 +141,8 @@ class AIController {
     const p = this.profile;
     const useWind = p.wind === 'sim';
     const def = ItemCatalog.weapon(t.selectedWeapon);
-
-    // Lasers travel in a straight line: aim directly at the target.
-    if (def.special === 'laser') {
-      const m = { x: t.x, y: t.y - TANK_H };
-      let deg = Utils.rad2deg(Math.atan2(-(target.y - 12 - m.y), target.x - m.x));
-      // barrel range is 0..180; targets below the horizon clamp to the nearest side
-      if (deg < 0) deg = (deg < -90) ? 180 : 0;
-      deg = Utils.clamp(deg, 2, 178);
-      this.targetAngle = deg + Utils.rand(-p.errAngle, p.errAngle) * 0.4;
-      this.targetPower = 80;
-      return;
-    }
+    // (the MASER shell is ballistic like everything else, so the sweep below
+    // covers it — the orbital strike lands wherever the marker shell does)
 
     // --- coarse grid sweep ---
     let best = { err: 1e9, angle: 60, power: 60 };

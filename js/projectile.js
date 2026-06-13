@@ -65,15 +65,17 @@ class Projectile {
         }
       }
 
-      // magnetic shields deflect enemy shells
+      // magnetic shields deflect enemy shells (never the owner's own rounds)
       for (const t of g.tanks) {
         if (!t.alive || t === this.owner || !t.hasUpgrade('magshield')) continue;
         const dx = this.x - t.x, dy = this.y - (t.y - 10);
         const d = Math.hypot(dx, dy);
-        if (d < 95 && d > 1) {
-          const f = 2600 / Math.max(20, d);
+        if (d < 150 && d > 1) {
+          // strong inverse-square repulsion so shells visibly swerve away
+          const f = 5.5e6 / Math.max(450, d * d);
           this.vx += dx / d * f * sdt;
           this.vy += dy / d * f * sdt;
+          if (Math.random() < 0.25) FX.sparkTrail(this.x, this.y, '#cc88ff');
         }
       }
 
@@ -204,6 +206,12 @@ class Projectile {
       case 'napalm':
         g.applyNapalm(this.x, this.y, this.owner);
         break;
+      case 'maser':
+        // shell only marks the spot — the orbital MASER does the killing
+        g.scheduleMaser(this.x, this.y, this.def, this.owner);
+        FX.ring(this.x, this.y, 24, 0.3, '#9fdcff');
+        AudioEngine.click();
+        break;
       case 'singularity':
         g.spawnVortex(this.x, this.y - 18, this.def, this.owner);
         break;
@@ -247,6 +255,13 @@ class Projectile {
     const slope = g.terrain.slopeAt(this.x); // dy/dx: positive = downhill to the right
     this.rollV += slope * 540 * dt;
     this.rollV *= (1 - 0.55 * dt);           // rolling friction
+    // magnetic shields shove rolling shells back too
+    for (const t of g.tanks) {
+      if (!t.alive || t === this.owner || !t.hasUpgrade('magshield')) continue;
+      const dx = this.x - t.x;
+      const d = Math.abs(dx);
+      if (d < 100) this.rollV += Math.sign(dx || 1) * 420 * (1 - d / 100) * dt;
+    }
     this.x += this.rollV * dt;
     if (g.settings.wrap) this.x = Utils.wrapX(this.x);
     else if (this.x < 4 || this.x > W - 4) { this._detonateRoll(); return; }
@@ -446,30 +461,96 @@ class Vortex {
   }
 }
 
-class LaserBeamFX {
-  constructor(x0, y0, x1, y1) {
-    this.kind = 'laserfx';
-    this.x0 = x0; this.y0 = y0; this.x1 = x1; this.y1 = y1;
-    this.life = 0.4;
+class MaserStrike {
+  /**
+   * Orbital MASER: a wide, faint blue targeting beam converges from space
+   * onto the marked impact point, then the maser fires straight down.
+   */
+  constructor(x, y, def, owner) {
+    this.kind = 'maser';
+    this.x = Utils.clamp(x, 8, W - 8);
+    this.y = y;
+    this.def = def;
+    this.owner = owner;
+    this.CONVERGE = 1.05;
+    this.FIRE = 0.5;
+    this.t = 0;
+    this.fired = false;
     this.dead = false;
   }
-  update(dt) { this.life -= dt; if (this.life <= 0) this.dead = true; }
-  draw(ctx) {
-    const a = Utils.clamp(this.life / 0.4, 0, 1);
+
+  update(dt, game) {
+    this.t += dt;
+    if (!this.fired && this.t >= this.CONVERGE) {
+      this.fired = true;
+      AudioEngine.laser();
+      AudioEngine.explosion(0.5);
+      game.applyExplosion(this.x, this.y, this.def, this.owner, {});
+      game.terrain.crater(this.x, this.y + 14, 11); // the beam bores deeper
+      FX.ring(this.x, this.y, 70, 0.4, '#9fdcff');
+      FX.addShake(7);
+      for (let i = 0; i < 16; i++) {
+        FX.spawn({
+          x: this.x + Utils.rand(-5, 5), y: Utils.rand(this.y * 0.15, this.y),
+          vx: Utils.rand(-70, 70), vy: Utils.rand(-40, 30),
+          life: Utils.rand(0.2, 0.5), size: 2, color: '#bfe8ff', grav: 0, kind: 'spark',
+        });
+      }
+    }
+    if (this.t >= this.CONVERGE + this.FIRE) this.dead = true;
+  }
+
+  draw(ctx, t) {
+    const ty = this.y;
     ctx.save();
-    ctx.globalAlpha = a;
-    ctx.strokeStyle = '#ff3050';
-    ctx.shadowColor = '#ff2040';
-    ctx.shadowBlur = 16;
-    ctx.lineWidth = 5 * a + 1;
-    ctx.beginPath();
-    ctx.moveTo(this.x0, this.y0);
-    ctx.lineTo(this.x1, this.y1);
-    ctx.stroke();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2 * a;
-    ctx.stroke();
+    ctx.globalCompositeOperation = 'lighter';
+    if (!this.fired) {
+      // wide faint targeting cone narrowing onto the marked point
+      const cv = Utils.smoothstep(Math.min(1, this.t / this.CONVERGE));
+      const topW = Utils.lerp(180, 16, cv);
+      const botW = Utils.lerp(64, 5, cv);
+      const pulse = 0.75 + 0.25 * Math.sin(t * 18);
+      const grad = ctx.createLinearGradient(0, 0, 0, ty);
+      grad.addColorStop(0, 'rgba(120,190,255,0.20)');
+      grad.addColorStop(1, 'rgba(170,225,255,0.85)');
+      ctx.globalAlpha = (0.08 + 0.17 * cv) * pulse;
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(this.x - topW / 2, -10);
+      ctx.lineTo(this.x + topW / 2, -10);
+      ctx.lineTo(this.x + botW / 2, ty);
+      ctx.lineTo(this.x - botW / 2, ty);
+      ctx.closePath();
+      ctx.fill();
+      // shrinking lock-on reticle
+      ctx.globalAlpha = 0.4 + 0.45 * Math.sin(t * 12) * Math.sin(t * 12);
+      ctx.strokeStyle = '#9fdcff';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.arc(this.x, ty, Utils.lerp(36, 8, cv), 0, TAU);
+      ctx.stroke();
+    } else {
+      // the strike itself: blue sheath, white-hot core, impact bloom
+      const ft = (this.t - this.CONVERGE) / this.FIRE;
+      const fade = ft < 0.7 ? 1 : 1 - (ft - 0.7) / 0.3;
+      const wob = 1 + 0.22 * Math.sin(t * 55);
+      ctx.globalAlpha = 0.5 * fade;
+      ctx.fillStyle = '#7fc4ff';
+      ctx.fillRect(this.x - 9 * wob, -10, 18 * wob, ty + 10);
+      ctx.globalAlpha = 0.95 * fade;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(this.x - 3, -10, 6, ty + 10);
+      const g = ctx.createRadialGradient(this.x, ty, 2, this.x, ty, 48);
+      g.addColorStop(0, 'rgba(255,255,255,0.9)');
+      g.addColorStop(1, 'rgba(127,196,255,0)');
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, ty, 48, 0, TAU);
+      ctx.fill();
+    }
     ctx.restore();
+    ctx.globalAlpha = 1;
   }
 }
 

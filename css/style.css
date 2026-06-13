@@ -149,8 +149,14 @@ html, body {
 .pause-panel, .gameover-panel { width: 420px; text-align: center; display: flex; flex-direction: column; gap: 16px; }
 .pause-panel h2, .gameover-panel h2 { letter-spacing: 4px; font-size: 30px; color: #fff; text-shadow: 0 0 16px rgba(57,255,106,0.6); }
 
-/* volume sliders */
-.slider-opt { justify-content: space-between; gap: 12px; }
+.pause-help {
+  text-align: left;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+
+/* volume sliders */.slider-opt { justify-content: space-between; gap: 12px; }
 .slider-opt input[type="range"] {
   flex: 1;
   accent-color: var(--neon);

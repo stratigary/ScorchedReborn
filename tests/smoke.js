@@ -177,5 +177,58 @@ vm.runInContext(`
   g6.damageTank(g6.tanks[1], 30, wick, true);
   if (wick.xp !== xpBefore) throw new Error('XP awarded despite no-level mode');
 
+  // magnetic shield: deflects incoming enemy rounds, ignores the owner's own
+  function magTest(defenderHasMag, attackerHasMag) {
+    const g = new Game();
+    g.onShop = () => g.nextRound();
+    g.newMatch({
+      players: [{ name: 'Att', type: 'human' }, { name: 'Def', type: 'human' }],
+      rounds: 3, wrap: false, sound: false,
+    });
+    for (let x = 0; x < 1600; x++) g.terrain.h[x] = 600;
+    g.terrain.dirty = true;
+    const att = g.tanks[0], def = g.tanks[1];
+    att.x = 500; def.x = 900;
+    att.y = def.y = 600;
+    att.health = def.health = 100;
+    att.shield = def.shield = null;
+    if (defenderHasMag) def.upgrades.magshield = true;
+    if (attackerHasMag) att.upgrades.magshield = true;
+    g.wind = 0;
+    g.turnIdx = 0;
+    g.phase = 'aim';
+    // solve for a direct hit on the defender
+    let best = { err: 1e9, a: 45, p: 60 };
+    for (let a = 15; a <= 80; a += 0.5) {
+      for (let p = 25; p <= 100; p += 1) {
+        const hit = g.simulateShot(att, a, p, true);
+        if (!hit) continue;
+        // a tank-collision impact registers at the collision radius edge,
+        // so score actual defender hits as perfect
+        const err = hit.tank === def ? 0 : Math.hypot(hit.x - def.x, hit.y - (def.y - 8));
+        if (err < best.err) best = { err, a, p };
+        if (err === 0) break;
+      }
+      if (best.err === 0) break;
+    }
+    if (best.err > 6) throw new Error('magTest: no direct-hit solution found (err=' + best.err + ')');
+    att.angle = best.a; att.power = best.p;
+    g.fire(att);
+    let guard = 60 * 20;
+    while (g.phase !== 'aim' && g.phase !== 'roundend' && guard-- > 0) g.update(dt);
+    return def.health;
+  }
+  const hpBaseline = magTest(false, false);
+  const hpDeflected = magTest(true, false);
+  const hpOwnRounds = magTest(false, true);
+  if (hpBaseline > 80) throw new Error('baseline direct hit too weak: hp ' + hpBaseline);
+  if (hpDeflected < hpBaseline + 15) {
+    throw new Error('mag shield barely deflected: baseline hp ' + hpBaseline + ' vs shielded hp ' + hpDeflected);
+  }
+  if (hpOwnRounds > 80) {
+    throw new Error("attacker's own mag shield interfered with outgoing shot: hp " + hpOwnRounds);
+  }
+  console.log('magshield: baseline=' + hpBaseline + ' deflected=' + hpDeflected + ' ownRounds=' + hpOwnRounds);
+
   console.log('SMOKE OK — ticks: ' + ticks + ', shops: ' + shopOpens);
 `, sandbox, { filename: 'smoke-driver' });

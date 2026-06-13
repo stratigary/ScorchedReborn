@@ -413,13 +413,28 @@ class Tank {
 
   _drawMagField(ctx, t) {
     ctx.save();
-    ctx.globalAlpha = 0.16 + 0.07 * Math.sin(t * 3);
+    // faint filled deflector field at its true influence radius
+    const g = ctx.createRadialGradient(this.x, this.y - 10, 30, this.x, this.y - 10, 120);
+    g.addColorStop(0, 'rgba(160,90,255,0)');
+    g.addColorStop(0.82, 'rgba(170,110,255,0.04)');
+    g.addColorStop(1, 'rgba(190,130,255,0.14)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y - 10, 120, 0, TAU);
+    ctx.fill();
+    // two rotating dashed boundary rings
+    ctx.globalAlpha = 0.22 + 0.08 * Math.sin(t * 3);
     ctx.strokeStyle = '#cc88ff';
     ctx.lineWidth = 1.5;
-    ctx.setLineDash([6, 8]);
+    ctx.setLineDash([7, 9]);
     ctx.lineDashOffset = -t * 30;
     ctx.beginPath();
-    ctx.arc(this.x, this.y - 10, 58, 0, TAU);
+    ctx.arc(this.x, this.y - 10, 118, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([4, 11]);
+    ctx.lineDashOffset = t * 22;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y - 10, 96, 0, TAU);
     ctx.stroke();
     ctx.restore();
   }

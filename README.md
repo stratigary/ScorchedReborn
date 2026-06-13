@@ -24,7 +24,7 @@ python3 -m http.server 8000
 | A / D | Drive left / right (costs fuel, limited by slope) |
 | Q / E / Tab | Cycle weapons |
 | X | Activate shield generator |
-| ESC | Pause (wrap/sound toggles, save & quit) |
+| ESC | Pause (controls reference, wrap/sound toggles, volume sliders, save & quit) |
 
 ## Features
 
@@ -39,7 +39,8 @@ python3 -m http.server 8000
   each with its own sky, celestial bodies, weather particles, soil fills and
   procedural textures.
 - **17 weapons** — missiles, baby/tactical/thermonuclear nukes (full white-out
-  flash + camera shake), MIRVs, terrain-cutting lasers, rolling napalm droplets
+  flash + camera shake), MIRVs, orbital MASER strikes (marker shell + space
+  beam), rolling napalm droplets
   that melt terrain, singularity vortices, kinetic rods from orbit, wind-immune
   railguns, dirt bombs, bouncers, rollers, homing missiles, leapfrogs, fissure
   charges — plus shields, parachutes, fuel packs, magnetic deflector shields,
@@ -73,7 +74,7 @@ js/
   effects.js      particles, weather, camera shake, flash, speech bubbles
   tank.js         tank entity: physics, driving, shields, skins, rendering
   projectile.js   ballistic shells + special behaviors, hazards (napalm,
-                  vortex, laser beam, rod strikes)
+                  vortex, orbital MASER strike, rod strikes)
   ai.js           4 AI profiles, ballistic search, bot shopping
   persistence.js  localStorage match saves + XP profiles
   shop.js         intermission shop UI
