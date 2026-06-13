@@ -155,5 +155,27 @@ vm.runInContext(`
   if (victim.y < yBefore - 2) throw new Error('dirt bomb lifted the tank: y ' + yBefore + ' -> ' + victim.y);
   if (!victim.buried) throw new Error('tank not flagged buried under mega dirt mound');
 
+  // nuclear detonations dim the world
+  FX.dimAlpha = 0;
+  g5.applyExplosion(800, 400, ItemCatalog.byId.tacnuke, null, {});
+  if (!(FX.dimAlpha > 0.4)) throw new Error('tactical nuke did not dim the scene');
+  for (let i = 0; i < 200; i++) g5.update(dt);
+  if (FX.dimAlpha > 0.01) throw new Error('nuke dim never decayed');
+
+  // sandbox mode: level gates off, no XP awards, bots can buy top-tier gear at Lv1
+  const g6 = new Game();
+  g6.onShop = () => g6.nextRound();
+  g6.newMatch({
+    players: [{ name: 'S1', type: 'johnwick' }, { name: 'S2', type: 'novice' }],
+    rounds: 3, wrap: false, sound: false, noLevels: true, startCash: 99999,
+  });
+  const wick = g6.tanks[0];
+  if (!wick.gatesOff) throw new Error('gatesOff not set in sandbox mode');
+  botShop(wick, g6);
+  if (wick.ammo('thermo') <= 0) throw new Error('sandbox bot could not buy level-5 thermo at Lv1');
+  const xpBefore = wick.xp;
+  g6.damageTank(g6.tanks[1], 30, wick, true);
+  if (wick.xp !== xpBefore) throw new Error('XP awarded despite no-level mode');
+
   console.log('SMOKE OK — ticks: ' + ticks + ', shops: ' + shopOpens);
 `, sandbox, { filename: 'smoke-driver' });

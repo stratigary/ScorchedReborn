@@ -204,7 +204,7 @@ class AIController {
 
 function botShop(tank, game) {
   const lvl = tank.level;
-  const affordable = it => it.price <= tank.cash && it.level <= lvl;
+  const affordable = it => it.price <= tank.cash && (tank.gatesOff || it.level <= lvl);
   const buyW = it => { tank.cash -= it.price; tank.inventory[it.id] = (tank.inventory[it.id] || 0) + it.qty; };
   const buyU = it => { tank.cash -= it.price; tank.upgrades[it.id] = true; };
 
@@ -242,7 +242,7 @@ function botShop(tank, game) {
     }
     const sh = ItemCatalog.byId.shield;
     if (tank.ammo('shield') < 1 && affordable(sh)) buyW(sh);
-    if (lvl >= 2 && !tank.predeployShield && tank.cash >= 550 && Math.random() < 0.5) {
+    if ((tank.gatesOff || lvl >= 2) && !tank.predeployShield && tank.cash >= 550 && Math.random() < 0.5) {
       tank.cash -= ItemCatalog.byId.predeploy.price;
       tank.predeployShield = true;
     }
@@ -261,7 +261,7 @@ function botShop(tank, game) {
   }
   const sh = ItemCatalog.byId.shield;
   while (tank.ammo('shield') < 2 && affordable(sh)) buyW(sh);
-  if (lvl >= 2 && !tank.predeployShield && tank.cash >= ItemCatalog.byId.predeploy.price) {
+  if ((tank.gatesOff || lvl >= 2) && !tank.predeployShield && tank.cash >= ItemCatalog.byId.predeploy.price) {
     tank.cash -= ItemCatalog.byId.predeploy.price;
     tank.predeployShield = true;
   }

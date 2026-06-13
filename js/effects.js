@@ -7,6 +7,7 @@ const FX = {
   rings: [],
   shakeMag: 0,
   flashAlpha: 0,
+  dimAlpha: 0,     // nuclear blast: world darkens so the fireball reads as blinding
   MAX_PARTICLES: 900,
 
   reset() {
@@ -15,6 +16,12 @@ const FX = {
     this.rings.length = 0;
     this.shakeMag = 0;
     this.flashAlpha = 0;
+    this.dimAlpha = 0;
+  },
+
+  /** Dim the world for a nuclear detonation; decays over ~1.5s. */
+  nukeDim(intensity) {
+    this.dimAlpha = Math.max(this.dimAlpha, Utils.clamp(intensity, 0, 0.85));
   },
 
   /** Expanding shockwave ring. */
@@ -139,6 +146,7 @@ const FX = {
   update(dt, terrain, vortices) {
     this.shakeMag *= Math.pow(0.04, dt);
     this.flashAlpha = Math.max(0, this.flashAlpha - dt * 1.4);
+    this.dimAlpha = Math.max(0, this.dimAlpha - dt * 0.55);
 
     const ps = this.particles;
     for (let i = ps.length - 1; i >= 0; i--) {

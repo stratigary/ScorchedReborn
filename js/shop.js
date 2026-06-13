@@ -64,8 +64,13 @@ class ShopUI {
     this.elPlayer.textContent = `${t.name} — ARMORY`;
     this.elPlayer.style.color = t.color;
     this.elCash.textContent = Utils.money(t.cash);
-    this.elLevel.textContent = `Lv ${t.level}${t.level >= MAX_LEVEL ? ' (MAX)' : ''}`;
-    this.elXpFill.style.width = `${Math.round(t.xpProgress() * 100)}%`;
+    if (t.gatesOff) {
+      this.elLevel.textContent = 'ALL GEAR UNLOCKED';
+      this.elXpFill.style.width = '100%';
+    } else {
+      this.elLevel.textContent = `Lv ${t.level}${t.level >= MAX_LEVEL ? ' (MAX)' : ''}`;
+      this.elXpFill.style.width = `${Math.round(t.xpProgress() * 100)}%`;
+    }
     const next = this.game.upcomingRound();
     this.elRound.textContent = `Next: Round ${next} — ${themeForRound(next).name}`;
   }
@@ -73,7 +78,7 @@ class ShopUI {
   renderStandings() {
     const rows = [...this.game.tanks].sort((a, b) => b.score - a.score)
       .map(t => `<div><span class="st-name" style="color:${t.color}">${t.name}</span>` +
-        `<span class="st-score">◆ ${t.score}</span> &nbsp; Lv${t.level}</div>`);
+        `<span class="st-score">◆ ${t.score}</span>${t.gatesOff ? '' : ' &nbsp; Lv' + t.level}</div>`);
     this.elStandings.innerHTML = rows.join('');
   }
 
@@ -89,7 +94,7 @@ class ShopUI {
     }
 
     for (const item of list) {
-      const locked = item.level > t.level;
+      const locked = !t.gatesOff && item.level > t.level;
       const row = document.createElement('div');
       row.className = 'shop-item' + (locked ? ' locked' : '');
 

@@ -39,6 +39,7 @@ class Tank {
     this.xp = cfg.xp || 0;
     this.level = levelForXP(this.xp);
     this.score = 0;
+    this.gatesOff = false; // sandbox mode: ignore level gates (set from game settings)
 
     // inventory: itemId -> count; upgrades: set of ids; skins: owned list
     this.inventory = { missile: Infinity };

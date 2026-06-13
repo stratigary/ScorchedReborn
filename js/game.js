@@ -49,6 +49,7 @@ class Game {
   newMatch(config) {
     this.settings.wrap = !!config.wrap;
     this.settings.sound = config.sound !== false;
+    this.settings.noLevels = !!config.noLevels;
     this.totalRounds = config.rounds || 6;
     this.round = 1;
     this.tanks = config.players.map((p, i) => {
@@ -58,8 +59,12 @@ class Game {
         type: p.type,
         cash: config.startCash !== undefined ? config.startCash : 1000,
       });
-      const prof = SaveSystem.getProfile(t.name);
-      if (prof) { t.xp = prof.xp; t.level = levelForXP(t.xp); }
+      t.gatesOff = this.settings.noLevels;
+      // sandbox matches leave persistent XP profiles untouched
+      if (!this.settings.noLevels) {
+        const prof = SaveSystem.getProfile(t.name);
+        if (prof) { t.xp = prof.xp; t.level = levelForXP(t.xp); }
+      }
       return t;
     });
     this.ai.clear();
@@ -176,7 +181,7 @@ class Game {
         t.score += 100;
       }
       if (t === winner) { this._award(t, 100, 250); t.score += 150; }
-      SaveSystem.saveProfile(t.name, t.xp);
+      if (!this.settings.noLevels) SaveSystem.saveProfile(t.name, t.xp);
     }
     return true;
   }
@@ -193,7 +198,7 @@ class Game {
   endMatch() {
     this.phase = 'over';
     SaveSystem.clearMatch();
-    for (const t of this.tanks) SaveSystem.saveProfile(t.name, t.xp);
+    if (!this.settings.noLevels) for (const t of this.tanks) SaveSystem.saveProfile(t.name, t.xp);
     const standings = [...this.tanks].sort((a, b) => b.score - a.score)
       .map(t => ({ name: t.name, score: t.score, level: t.level, color: t.color, type: t.type }));
     if (this.onGameOver) this.onGameOver(standings);
@@ -268,6 +273,21 @@ class Game {
     FX.addShake(def.shake || r * 0.12);
     AudioEngine.explosion(Utils.clamp(r / 110, 0.15, 1));
     if (def.flash) { FX.flash(1.4); FX.addShake(30); } // thermonuclear white-out
+    // nuclear blasts darken the world so the fireball looks blinding
+    if (def.nuclear) {
+      FX.nukeDim(r >= 100 ? 0.8 : r >= 55 ? 0.68 : 0.55);
+      FX.ring(x, y, r * 3.4, 0.9, 'rgba(255,240,200,0.9)');
+      // rising incandescent plume that lingers through the dim
+      for (let i = 0; i < 10; i++) {
+        FX.spawn({
+          x: x + Utils.rand(-r * 0.3, r * 0.3), y: y - Utils.rand(0, r * 0.4),
+          vx: Utils.rand(-16, 16), vy: Utils.rand(-95, -30),
+          life: Utils.rand(0.8, 1.7), size: Utils.rand(r * 0.18, r * 0.42),
+          color: Utils.choice(['#ffdf90', '#ff9a40', '#fff6d0']),
+          grav: -0.12, kind: 'glow',
+        });
+      }
+    }
 
     for (const t of this.tanks) {
       if (!t.alive) continue;
@@ -370,6 +390,7 @@ class Game {
 
   _award(tank, xp, cash) {
     tank.cash += cash;
+    if (this.settings.noLevels) return; // sandbox mode: no XP, no level-ups
     const ups = tank.addXP(xp);
     if (ups > 0) {
       AudioEngine.levelUp();
@@ -595,6 +616,13 @@ class Game {
     for (const tank of this.tanks) tank.draw(ctx, tank === this.activeTank && this.phase !== 'over', t);
     for (const p of this.projectiles) p.draw(ctx);
 
+    // nuclear dimming: darken the scene, then draw the (additive) blast on
+    // top so the fireball stays blinding against the darkness
+    if (FX.dimAlpha > 0.01) {
+      ctx.fillStyle = `rgba(3,3,14,${Utils.clamp(FX.dimAlpha, 0, 0.85)})`;
+      ctx.fillRect(-60, -60, W + 120, H + 120);
+    }
+
     FX.draw(ctx);
     FX.drawBubbles(ctx);
     ctx.restore();
@@ -753,13 +781,15 @@ class Game {
     ctx.fillText(`ANGLE ${Math.round(t.angle)}°`, px, py + 84);
     ctx.fillStyle = '#ffd54f';
     ctx.fillText(Utils.money(t.cash), px + 110, py + 84);
-    ctx.fillStyle = '#7dff9a';
-    ctx.fillText(`Lv${t.level}`, px + 220, py + 84);
-    // xp mini-bar
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(px + 252, py + 76, 56, 8);
-    ctx.fillStyle = '#39ff6a';
-    ctx.fillRect(px + 252, py + 76, 56 * t.xpProgress(), 8);
+    if (!this.settings.noLevels) {
+      ctx.fillStyle = '#7dff9a';
+      ctx.fillText(`Lv${t.level}`, px + 220, py + 84);
+      // xp mini-bar
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(px + 252, py + 76, 56, 8);
+      ctx.fillStyle = '#39ff6a';
+      ctx.fillRect(px + 252, py + 76, 56 * t.xpProgress(), 8);
+    }
 
     // weapon line
     const def = ItemCatalog.weapon(t.selectedWeapon);
@@ -841,6 +871,7 @@ class Game {
     this.themeState = makeThemeState(this.theme, this.terrain.seed);
     this.tanks = data.players.map(d => Tank.deserialize(d));
     for (const t of this.tanks) {
+      t.gatesOff = !!this.settings.noLevels;
       t.y = this.terrain.heightAt(t.x);
       t._updateBuried(this.terrain);
     }

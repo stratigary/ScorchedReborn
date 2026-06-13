@@ -9,7 +9,7 @@ const WEAPONS = [
     dmg: 30,  radius: 24,  bubble: 'default',     desc: 'Reliable, free, unlimited.' },
   { id: 'dirt',        name: 'Dirt Bomb',       price: 120,  level: 1, qty: 3, special: 'dirt',
     dmg: 0,   radius: 46,  bubble: 'dirt',        desc: 'Deposits a soil mound. Bury your enemies.' },
-  { id: 'babynuke',    name: 'Baby Nuke',       price: 150,  level: 1, qty: 2,
+  { id: 'babynuke',    name: 'Baby Nuke',       price: 150,  level: 1, qty: 2, nuclear: true,
     dmg: 48,  radius: 40,  shake: 8,  bubble: 'nuke', desc: 'Small nuke, big attitude.' },
   { id: 'bouncer',     name: 'Bouncer',         price: 200,  level: 1, qty: 3, special: 'bouncer',
     dmg: 35,  radius: 26,  bubble: 'bouncer',     desc: 'Reflects off slopes up to 3 times.' },
@@ -17,7 +17,7 @@ const WEAPONS = [
     dmg: 45,  radius: 30,  bubble: 'roller',      desc: 'Rolls downhill, detonates on contact or rest.' },
   { id: 'megadirt',    name: 'Mega Dirt Bomb',  price: 350,  level: 2, qty: 2, special: 'dirt',
     dmg: 0,   radius: 85,  bubble: 'dirt',        desc: 'A truly offensive amount of soil.' },
-  { id: 'tacnuke',     name: 'Tactical Nuke',   price: 400,  level: 2, qty: 2,
+  { id: 'tacnuke',     name: 'Tactical Nuke',   price: 400,  level: 2, qty: 2, nuclear: true,
     dmg: 72,  radius: 60,  shake: 14, bubble: 'nuke', desc: 'City-block demolition in a shell.' },
   { id: 'napalm',      name: 'Napalm',          price: 450,  level: 2, qty: 2, special: 'napalm',
     dmg: 0,   radius: 18,  bubble: 'napalm',      desc: 'Burning droplets roll downhill and melt terrain.' },
@@ -37,7 +37,7 @@ const WEAPONS = [
     dmg: 45,  radius: 30,  bubble: 'kinetic',     desc: 'Marks a target for rods dropped from orbit.' },
   { id: 'singularity', name: 'Singularity',     price: 1800, level: 5, qty: 1, special: 'singularity',
     dmg: 70,  radius: 60,  bubble: 'singularity', desc: 'Gravity vortex draws in everything, then detonates.' },
-  { id: 'thermo',      name: 'Thermonuclear',   price: 2000, level: 5, qty: 1,
+  { id: 'thermo',      name: 'Thermonuclear',   price: 2000, level: 5, qty: 1, nuclear: true,
     dmg: 120, radius: 115, shake: 30, flash: true, bubble: 'thermo', desc: 'Map-carving apocalypse.' },
 ];
 

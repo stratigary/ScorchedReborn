@@ -84,6 +84,7 @@
       players,
       rounds: parseInt(document.getElementById('opt-rounds').value, 10),
       wrap: document.getElementById('opt-wrap').checked,
+      noLevels: document.getElementById('opt-nolevels').checked,
       startCash: cashOpt === 'unlimited' ? Infinity : parseInt(cashOpt, 10),
       sound,
     });
@@ -121,7 +122,8 @@
     title.textContent = standings.length ? `${standings[0].name} WINS THE WAR` : 'GAME OVER';
     list.innerHTML = standings.map((s, i) =>
       `<div><span class="st-name" style="color:${s.color}">${i + 1}. ${s.name}</span>` +
-      `<span class="st-score">◆ ${s.score}</span> &nbsp; Lv${s.level}</div>`).join('');
+      `<span class="st-score">◆ ${s.score}</span>` +
+      `${game.settings.noLevels ? '' : ' &nbsp; Lv' + s.level}</div>`).join('');
     elGameOver.classList.remove('hidden');
   };
 
