@@ -76,6 +76,10 @@ class Game {
       }
       return t;
     });
+    // teams mode: alternate slots between Alpha (0) and Bravo (1)
+    if (this.settings.mode === 'teams') {
+      this.tanks.forEach((t, i) => { t.team = i % 2; });
+    }
     this.ai.clear();
     for (const t of this.tanks) if (t.isBot) this.ai.set(t, new AIController(t));
     FX.reset();
@@ -134,6 +138,8 @@ class Game {
       t.angle = t.x < W / 2 ? 60 : 120;
       t.roundDamage = 0; t.roundKills = 0;
       t._feats = {}; // mock achievements re-earnable each round
+      t.lastImpact = null;
+      t.emp = 0;
       // fuel: one super fuel pack consumed per round
       t.fuel = 100;
       if (t.ammo('superfuel') > 0) { t.consumeAmmo('superfuel'); t.fuel += 100; }
@@ -191,6 +197,7 @@ class Game {
     this.phase = 'aim';
     this.settleTimer = 0;
     const t = this.activeTank;
+    if (t.buried) t.stats.buriedTurns++;
     if (t.isBoss && t.alive) {
       if (!t.shield) {
         t.shield = { hp: 50, max: 300 };
@@ -205,6 +212,8 @@ class Game {
   }
 
   nextTurn() {
+    // EMP wears off as the fried tank's turn ends
+    if (this.activeTank && this.activeTank.emp > 0) this.activeTank.emp--;
     if (this.checkRoundEnd()) return;
     this.randomizeWind();
     for (let i = 1; i <= this.tanks.length; i++) {
@@ -216,21 +225,33 @@ class Game {
 
   checkRoundEnd() {
     const alive = this.tanks.filter(t => t.alive);
-    if (alive.length > 1) return false;
+    const teams = this.settings.mode === 'teams';
+    if (teams) {
+      if (new Set(alive.map(t => t.team)).size > 1) return false;
+    } else if (alive.length > 1) return false;
     this.phase = 'roundend';
     this.delayTimer = 2.6;
-    const winner = alive[0] || null;
-    this.banner = {
-      text: winner ? `${winner.name} WINS ROUND ${this.round}!` : `ROUND ${this.round}: MUTUAL DESTRUCTION`,
-      sub: '', timer: 2.6,
-    };
-    // round awards
+    let winners, text;
+    if (teams && alive.length) {
+      winners = alive;
+      text = `TEAM ${alive[0].team === 0 ? 'ALPHA' : 'BRAVO'} WINS ROUND ${this.round}!`;
+    } else {
+      winners = alive.slice(0, 1);
+      text = alive[0] ? `${alive[0].name} WINS ROUND ${this.round}!` : `ROUND ${this.round}: MUTUAL DESTRUCTION`;
+    }
+    this.banner = { text, sub: '', timer: 2.6 };
+    // round awards + 5% interest on the war chest
     for (const t of this.tanks) {
+      if (isFinite(t.cash) && t.cash > 0) {
+        const interest = Math.round(t.cash * 0.05);
+        t.cash += interest;
+        t.stats.earned += interest;
+      }
       if (t.alive) {
         this._award(t, 50, 2000); // survival
         t.score += 100;
       }
-      if (t === winner) { this._award(t, 100, 2500); t.score += 150; }
+      if (winners.includes(t)) { this._award(t, 100, 2500); t.score += 150; }
       if (!this.settings.noLevels) SaveSystem.saveProfile(t.name, t.xp);
     }
     return true;
@@ -250,8 +271,25 @@ class Game {
     SaveSystem.clearMatch();
     if (!this.settings.noLevels) for (const t of this.tanks) SaveSystem.saveProfile(t.name, t.xp);
     const standings = [...this.tanks].sort((a, b) => b.score - a.score)
-      .map(t => ({ name: t.name, score: t.score, level: t.level, color: t.color, type: t.type }));
-    if (this.onGameOver) this.onGameOver(standings);
+      .map(t => ({ name: t.name, score: t.score, level: t.level, color: t.color, type: t.type, team: t.team }));
+    if (this.onGameOver) this.onGameOver(standings, this._computeAwards());
+  }
+
+  /** Dubious-honors ceremony for the game-over screen. */
+  _computeAwards() {
+    const top = (stat, fmt) => {
+      let best = null;
+      for (const t of this.tanks) if (t.stats[stat] > 0 && (!best || t.stats[stat] > best.stats[stat])) best = t;
+      return best ? { name: best.name, color: best.color, value: fmt(best.stats[stat]) } : null;
+    };
+    const defs = [
+      ['🏆 GLASS CANNON — most self-damage', top('selfDmg', v => Math.round(v) + ' dmg')],
+      ['🔭 ASTRONOMER — most shots off the map', top('offMap', v => v + (v === 1 ? ' shot' : ' shots'))],
+      ['🪱 DIRT CONNOISSEUR — most turns spent buried', top('buriedTurns', v => v + (v === 1 ? ' turn' : ' turns'))],
+      ['💥 ONE-HIT WONDER — biggest single hit', top('bigHit', v => v + ' dmg')],
+      ['🤑 WAR PROFITEER — most cash earned', top('earned', v => Utils.money(v))],
+    ];
+    return defs.filter(([, w]) => w).map(([title, w]) => ({ title, ...w }));
   }
 
   /* ================= firing pipeline ================= */
@@ -314,6 +352,18 @@ class Game {
         grav: 0, kind: 'spark',
       });
     }
+    // The Refund: coin flip between a jackpot round and a breech explosion
+    let firedDef = def;
+    if (def.gamble) {
+      if (Math.random() < 0.5) {
+        FX.addBubble(tank.x, tank.y - 46, 'Refund DENIED.', 2.2, { color: '#ff9090', follow: tank });
+        this.applyExplosion(m.x, m.y, { dmg: def.selfDmg || 45, radius: def.radius }, tank, { direct: tank });
+        return;
+      }
+      firedDef = Object.assign({}, def, { dmg: def.jackpotDmg || 90 });
+      FX.addBubble(tank.x, tank.y - 46, 'JACKPOT ROUND!', 2.2, { color: '#7dff9a', follow: tank });
+    }
+
     let speed = tank.power * POWER_TO_SPEED;
     if (def.special === 'railgun') speed = Math.max(speed * 2.6, 1600); // hypervelocity
     if (tank.isBoss) {
@@ -325,11 +375,11 @@ class Game {
         const rdx = Math.cos(rad), rdy = -Math.sin(rad);
         const mx = tank.x + rdx * 38 * s;
         const my = baseY + rdy * 38 * s;
-        const p = new Projectile(def, mx, my, rdx * speed, rdy * speed, tank, this);
+        const p = new Projectile(firedDef, mx, my, rdx * speed, rdy * speed, tank, this);
         this.projectiles.push(p);
       }
     } else {
-      const p = new Projectile(def, m.x, m.y, m.dx * speed, m.dy * speed, tank, this);
+      const p = new Projectile(firedDef, m.x, m.y, m.dx * speed, m.dy * speed, tank, this);
       this.projectiles.push(p);
     }
     FX.addShake(3);
@@ -377,11 +427,20 @@ class Game {
       const isDirect = (direct === t) || d < r * 0.35;
       if (dmg > 0) this.damageTank(t, dmg, owner, isDirect);
     }
+    // decoys are physical: blasts pop them
+    for (const hz of this.hazards) {
+      if (hz.kind !== 'decoy' || hz.dead) continue;
+      const d = Utils.dist(x, y, hz.x, hz.y - 8);
+      if (d < r + 16) hz.hit((def.dmg || 0) * Utils.clamp(1 - d / (r + 16), 0.2, 1));
+    }
+
+    this._markImpact(owner, x, y);
+
     // a clean miss that lands near somebody earns the shooter some lip
     if (!anyHit && owner && (def.dmg || 0) > 0 && !this._missTaunted) {
       let closest = null, cd = 1e9;
       for (const t of this.tanks) {
-        if (!t.alive || t === owner) continue;
+        if (!t.alive || t === owner || areAllies(t, owner)) continue;
         const d = Utils.dist(x, y, t.x, t.y - 8);
         if (d < cd) { cd = d; closest = t; }
       }
@@ -439,8 +498,14 @@ class Game {
     this._checkDeaths(owner);
   }
 
+  /** Remember where this tank's last shell landed (for the aim marker). */
+  _markImpact(owner, x, y) {
+    if (owner) owner.lastImpact = { x, y };
+  }
+
   applyDirt(x, y, def, owner = null) {
     const wasBuried = owner ? owner.buried : true;
+    this._markImpact(owner, x, y);
     this.terrain.mound(x, def.radius);
     FX.dirtBurst(x, y, def.radius, this.theme.soilTop);
     AudioEngine.explosion(x, 0.25);
@@ -462,14 +527,144 @@ class Game {
     this._checkDeaths(owner);
   }
 
-  applyNapalm(x, y, owner) {
+  applyNapalm(x, y, owner, count = 26) {
     AudioEngine.explosion(x, 0.45);
     FX.addShake(5);
-    for (let i = 0; i < 26; i++) {
+    this._markImpact(owner, x, y);
+    for (let i = 0; i < count; i++) {
       const a = Utils.rand(-Math.PI * 0.9, -Math.PI * 0.1);
       const sp = Utils.rand(40, 230);
       this.hazards.push(new NapalmDrop(x, y - 4, Math.cos(a) * sp, Math.sin(a) * sp, owner));
     }
+  }
+
+  applyGlacier(x, y, def, owner) {
+    // small blast first, then the freeze locks whatever shape is left
+    this.applyExplosion(x, y, { dmg: def.dmg, radius: def.radius }, owner, {});
+    this.terrain.freeze(x, def.freezeHalf || 110);
+    FX.ring(x, y, (def.freezeHalf || 110) * 0.9, 0.6, '#bfe8ff');
+    AudioEngine.shieldOn();
+    for (let i = 0; i < 14; i++) {
+      FX.spawn({
+        x: x + Utils.rand(-def.freezeHalf, def.freezeHalf), y: this.terrain.heightAt(x) - Utils.rand(0, 10),
+        vx: Utils.rand(-30, 30), vy: Utils.rand(-80, -20),
+        life: Utils.rand(0.4, 0.9), size: Utils.rand(1.5, 3), color: '#dff4ff', grav: 0.3, kind: 'spark',
+      });
+    }
+  }
+
+  applyQuake(x, y, def, owner) {
+    this.applyExplosion(x, y, { dmg: def.dmg, radius: def.radius }, owner, {});
+    const range = def.quakeRange || 260;
+    const ter = this.terrain;
+    for (let dx = -range; dx <= range; dx++) {
+      const xi = Math.round(x + dx);
+      if (xi < 0 || xi >= W) continue;
+      const fall = 1 - Math.abs(dx) / range;
+      const wave = Math.sin(Math.abs(dx) * 0.055) * 22 * fall;
+      const limitY = ter.indestructible[xi];
+      ter.h[xi] = Utils.clamp(ter.h[xi] + wave, 30, limitY);
+    }
+    ter.dirty = true;
+    FX.addShake(26);
+    AudioEngine.explosion(x, 0.8);
+    // rattle everyone standing in the wave zone
+    for (const t of this.tanks) {
+      if (!t.alive) continue;
+      if (Math.abs(t.x - x) < range) {
+        const ground = ter.heightAt(t.x);
+        if (ground > t.y + 1.5) t.falling = true; // floor dropped: fall (chutes/fall damage apply)
+        t._updateBuried(ter);
+      }
+    }
+  }
+
+  applyTeleport(x, y, owner) {
+    if (!owner || !owner.alive) return;
+    FX.ring(owner.x, owner.y - 10, 30, 0.4, '#bf8fff');
+    const nx = Utils.clamp(x, 12, W - 12);
+    owner.x = nx;
+    owner.y = Math.min(this.terrain.heightAt(nx), y);
+    owner.falling = this.terrain.heightAt(nx) > owner.y + 1.5;
+    owner.vy = 0;
+    owner._updateBuried(this.terrain);
+    this._markImpact(owner, nx, owner.y);
+    FX.ring(nx, owner.y - 10, 34, 0.5, '#bf8fff');
+    for (let i = 0; i < 12; i++) {
+      FX.spawn({
+        x: nx + Utils.rand(-14, 14), y: owner.y - Utils.rand(0, 24),
+        vx: Utils.rand(-40, 40), vy: Utils.rand(-60, 10),
+        life: Utils.rand(0.3, 0.6), size: 2, color: '#d9b8ff', grav: -0.1, kind: 'spark',
+      });
+    }
+    AudioEngine.click();
+  }
+
+  applyAcidRain(x, y, def, owner) {
+    this.applyExplosion(x, y, { dmg: def.dmg, radius: def.radius }, owner, {});
+    this.hazards.push(new AcidStorm(x, def, owner, this));
+  }
+
+  /**
+   * EMP: modest blast, drains (not deletes) energy shields, and fries
+   * electronics — mag-shield, targeting aids, bot fire-control — for one
+   * of the victim's turns. Deliberately not a killer: it opens a window.
+   */
+  applyEmp(x, y, def, owner, direct) {
+    this.applyExplosion(x, y, { dmg: def.dmg, radius: def.radius }, owner, { direct });
+    const R = def.empRadius || 140;
+    FX.ring(x, y, R, 0.5, '#7fd4ff');
+    FX.ring(x, y, R * 0.6, 0.35, '#ffffff');
+    AudioEngine.laser(x);
+    for (const t of this.tanks) {
+      if (!t.alive) continue;
+      if (Utils.dist(x, y, t.x, t.y - 8) > R) continue;
+      t.emp = 1; // electronics down for their next turn (cleared as it ends)
+      if (t.shield) {
+        t.shield.hp -= def.empDrain || 60;
+        FX.ring(t.x, t.y - 10, t.hitRadius + 4, 0.3, '#9fe8ff');
+        if (t.shield.hp <= 0) {
+          t.shield = null;
+          AudioEngine.humStop();
+        }
+      }
+      FX.sparkTrail(t.x, t.y - 16, '#7fd4ff');
+    }
+  }
+
+  applyGrapple(x, y, def, owner, direct) {
+    this.applyExplosion(x, y, { dmg: def.dmg, radius: def.radius }, owner, { direct });
+    const R = def.pullRadius || 150;
+    for (const t of this.tanks) {
+      if (!t.alive || t === owner) continue;
+      const dx = t.x - x;
+      const d = Math.abs(dx);
+      if (d > R || d < 2) continue;
+      const pull = (1 - d / R) * 100;
+      FX.sparkTrail(t.x, t.y - 10, '#ffd54f');
+      t.x = Utils.clamp(t.x - Math.sign(dx) * Math.min(pull, d - 6), 10, W - 10);
+      const ground = this.terrain.heightAt(t.x);
+      if (ground > t.y) t.falling = true;
+      else if (ground >= t.y - 1.5) t.y = ground;
+      t._updateBuried(this.terrain);
+    }
+    FX.ring(x, y, R * 0.8, 0.4, '#ffd54f');
+    AudioEngine.bounce(x);
+  }
+
+  scheduleCarpet(x, def, owner) {
+    this.hazards.push(new CarpetPlane(x, def, owner, this));
+  }
+
+  scheduleMeteors(def, owner) {
+    this.hazards.push(new MeteorStorm(def, owner, this));
+    FX.addShake(4);
+  }
+
+  spawnDecoy(x, owner) {
+    this.hazards.push(new Decoy(x, owner, this));
+    AudioEngine.click();
+    FX.ring(x, this.terrain.heightAt(x) - 10, 24, 0.4, '#e8d9a0');
   }
 
   spawnVortex(x, y, def, owner) {
@@ -497,14 +692,26 @@ class Game {
       FX.ring(victim.x, victim.y - 10, victim.hitRadius + 6, 0.3, '#9fe8ff');
       FX.sparkTrail(victim.x, victim.y - 12, '#7fd4ff');
     }
-    if (owner === victim && (actual > 0 || absorbed > 0)) this._feat(victim, 'selfdamage');
-    if (owner && owner !== victim) {
+    if (owner === victim && (actual > 0 || absorbed > 0)) {
+      victim.stats.selfDmg += actual + absorbed;
+      this._feat(victim, 'selfdamage');
+    }
+    if (owner && owner !== victim && !areAllies(owner, victim)) {
       victim.lastDamager = owner;
       if (actual > 0) {
         owner.cash += actual * 20;
+        owner.stats.earned += actual * 20;
+        owner.stats.bigHit = Math.max(owner.stats.bigHit, Math.round(actual));
         owner.score += actual;
         owner.roundDamage += actual;
         this._award(owner, actual + (direct ? 30 : 0), 0);
+      }
+      // chipping a shield pays too, at half rate — sieges shouldn't be free
+      if (absorbed > 0) {
+        owner.cash += Math.round(absorbed * 10);
+        owner.stats.earned += Math.round(absorbed * 10);
+        owner.score += Math.round(absorbed * 0.5);
+        this._award(owner, Math.round(absorbed * 0.5), 0);
       }
     }
     if (!silent && actual > 0) FX.sparkTrail(victim.x, victim.y - 12, '#ff7070');
@@ -532,6 +739,7 @@ class Game {
 
   _award(tank, xp, cash) {
     tank.cash += cash;
+    tank.stats.earned += cash;
     if (this.settings.noLevels) return; // sandbox mode: no XP, no level-ups
     const ups = tank.addXP(xp);
     if (ups > 0) {
@@ -555,7 +763,7 @@ class Game {
       t.falling = true;
       FX.addBubble(t.x, t.y - 52, pickDeathSaying(), 3.8, { color: '#ff9090' });
       const credit = (killer && killer !== t && killer.alive !== undefined) ? killer : t.lastDamager;
-      if (credit && credit !== t) {
+      if (credit && credit !== t && !areAllies(credit, t)) {
         credit.roundKills++;
         credit.score += 100;
         this._award(credit, 80, 3000);
@@ -721,6 +929,24 @@ class Game {
     FX.spawnWeather(dt, this.theme, this.wind, this.settings.weather);
     FX.update(dt, this.terrain, vortices, this.wind);
 
+    // volcanic themes erupt now and then: a spray of lava droplets
+    if (this.theme.eruptions && Math.random() < dt / 14) {
+      const ex = Utils.rand(60, W - 60);
+      const ey = this.terrain.heightAt(ex);
+      FX.explosion(ex, ey, 22, this.theme.soilTop);
+      AudioEngine.explosion(ex, 0.25);
+      FX.addShake(4);
+      const n = Utils.randInt(3, 5);
+      for (let i = 0; i < n; i++) {
+        this.hazards.push(new NapalmDrop(ex, ey - 6, Utils.rand(-90, 90), Utils.rand(-380, -200), null));
+      }
+    }
+
+    // hazards tick in every active phase — eruption droplets fall during
+    // aim, decoys settle onto craters, napalm keeps burning between turns
+    for (const hz of this.hazards) hz.update(dt, this);
+    this.hazards = this.hazards.filter(h => !h.dead);
+
     switch (this.phase) {
       case 'aim': {
         const t = this.activeTank;
@@ -736,11 +962,11 @@ class Game {
       case 'sim': {
         for (const p of this.projectiles) p.update(dt);
         this.projectiles = this.projectiles.filter(p => !p.dead && p.age < 25);
-        for (const hz of this.hazards) hz.update(dt, this);
-        this.hazards = this.hazards.filter(h => !h.dead);
         this._checkDeaths(null);
 
-        const action = this.projectiles.length > 0 || this.hazards.length > 0 || anyFalling;
+        // decoys persist between turns — they must not stall the settle timer
+        const liveHazards = this.hazards.some(h => h.kind !== 'decoy');
+        const action = this.projectiles.length > 0 || liveHazards || anyFalling;
         if (action) {
           this.settleTimer = 0;
           this.terrainWait = 0;
@@ -782,11 +1008,15 @@ class Game {
       this.terrain.dirty = false;
     }
     ctx.drawImage(this._terrainCache, 0, 0);
+    this.drawIceOverlay(ctx, t);
 
     this.drawWindFlag(ctx, t);
 
-    // trajectory preview for the aiming human
-    if (this.humanCanAct) this.drawTrajectory(ctx);
+    // aim aids for the aiming human: last-shot marker + trajectory preview
+    if (this.humanCanAct) {
+      this.drawImpactMarker(ctx, t);
+      this.drawTrajectory(ctx);
+    }
 
     // hazards under tanks (napalm pools), vortices above
     for (const hz of this.hazards) hz.draw(ctx, t);
@@ -868,8 +1098,51 @@ class Game {
     ctx.restore();
   }
 
+  /** Sheen along frozen surface columns. */
+  drawIceOverlay(ctx, t) {
+    if (!this.terrain.ice.some(v => v)) return;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(190,232,255,0.85)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    let open = false;
+    for (let x = 0; x < W; x += 2) {
+      if (this.terrain.ice[x]) {
+        const y = this.terrain.h[x] + 1;
+        if (!open) { ctx.moveTo(x, y); open = true; }
+        else ctx.lineTo(x, y);
+      } else open = false;
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 0.35 + 0.15 * Math.sin(t * 2.4);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /** Fading X where the active player's previous shell landed. */
+  drawImpactMarker(ctx, t) {
+    const mark = this.activeTank.lastImpact;
+    if (!mark) return;
+    ctx.save();
+    ctx.globalAlpha = 0.55 + 0.25 * Math.sin(t * 4);
+    ctx.strokeStyle = this.activeTank.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(mark.x - 7, mark.y - 7); ctx.lineTo(mark.x + 7, mark.y + 7);
+    ctx.moveTo(mark.x - 7, mark.y + 7); ctx.lineTo(mark.x + 7, mark.y - 7);
+    ctx.stroke();
+    ctx.globalAlpha *= 0.5;
+    ctx.beginPath();
+    ctx.arc(mark.x, mark.y, 12, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   drawTrajectory(ctx) {
     const tank = this.activeTank;
+    if (tank.emp > 0) return; // targeting electronics are fried
     const hasBasic = tank.hasUpgrade('targetcomp');
     const hasReticle = tank.hasUpgrade('reticle');
     const hasWeather = tank.hasUpgrade('weather');
@@ -950,7 +1223,8 @@ class Game {
       }
     };
 
-    bar('HP', px, py + 22, 130, t.health / 100, t.health > 50 ? '#5cd65c' : t.health > 25 ? '#ffd54f' : '#ff5252', `${t.health}`);
+    const hpFrac = t.health / t.maxHealth;
+    bar('HP', px, py + 22, 130, hpFrac, hpFrac > 0.5 ? '#5cd65c' : hpFrac > 0.25 ? '#ffd54f' : '#ff5252', `${t.health}`);
     bar('FUEL', px, py + 38, 130, t.fuel / Math.max(1, t.maxFuel), '#e8a33c', `${Math.round(t.fuel)}`);
     bar('PWR', px, py + 54, 130, t.power / 100, '#7fd4ff', `${Math.round(t.power)}`);
 
@@ -1002,7 +1276,8 @@ class Game {
       ctx.fillStyle = tk.color;
       ctx.fillRect(rx, yy - 8, 8, 8);
       ctx.fillStyle = tk.alive ? '#dfe8ff' : '#5a6678';
-      ctx.fillText(`${tk.name.slice(0, 12)} ${tk.alive ? tk.health : '✝'}  ◆${tk.score}`, rx + 14, yy);
+      const teamTag = tk.team !== undefined ? (tk.team === 0 ? 'ᴬ ' : 'ᴮ ') : '';
+      ctx.fillText(`${teamTag}${tk.name.slice(0, 12)} ${tk.alive ? tk.health : '✝'}  ◆${tk.score}`, rx + 14, yy);
     });
 
     // bot thinking indicator

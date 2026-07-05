@@ -28,6 +28,11 @@ class Tank {
     // combat
     this.health = 100;
     this.alive = true;
+    this.emp = 0;                        // turns of fried electronics remaining
+    this.team = undefined;               // 0 / 1 in teams mode
+    this.lastImpact = null;              // {x, y} of this tank's last shell impact
+    // match-long bookkeeping for the end-of-match awards ceremony
+    this.stats = { selfDmg: 0, offMap: 0, buriedTurns: 0, bigHit: 0, earned: 0 };
     this.angle = cfg.angle !== undefined ? cfg.angle : (this.x < W / 2 ? 60 : 120);
     this.power = 55;
     this.fuel = 100;
@@ -55,6 +60,11 @@ class Tank {
   }
 
   get radius() { return this.isBoss ? 28 : TANK_RADIUS; }
+
+  get maxHealth() { return this.isBoss ? 600 : 100; }
+
+  /** Magnetic deflector works only while the electronics aren't EMP-fried. */
+  magActive() { return this.hasUpgrade('magshield') && this.emp <= 0; }
 
   /** Shell-interception radius: the shield dome when one is up, else the hull. */
   get hitRadius() {
@@ -110,7 +120,17 @@ class Tank {
   hasUpgrade(id) { return !!this.upgrades[id]; }
 
   activateShield() {
-    if (this.shield || this.ammo('shield') <= 0) return false;
+    if (this.shield) {
+      // [X] with a shield already up: top it off from a battery
+      if (this.ammo('battery') > 0 && this.shield.hp < this.shield.max) {
+        this.inventory.battery--;
+        this.shield.hp = Math.min(this.shield.max, this.shield.hp + 50);
+        AudioEngine.shieldOn();
+        return true;
+      }
+      return false;
+    }
+    if (this.ammo('shield') <= 0) return false;
     this.inventory.shield--;
     this.shield = { hp: 100, max: 100 };
     AudioEngine.shieldOn();
@@ -164,6 +184,14 @@ class Tank {
       if (ground >= this.y - 1.5) this.y = ground;
       this.falling = false;
       this.vy = 0;
+      // slick ice: slide downhill, no grip
+      if (this.alive && !this.buried && terrain.isIce(this.x)) {
+        const s = terrain.slopeAt(this.x);
+        if (Math.abs(s) > 0.12) {
+          this.x = Utils.clamp(this.x + Math.sign(s) * Math.min(70, 130 * Math.abs(s)) * dt, 10, W - 10);
+          this.y = terrain.heightAt(this.x);
+        }
+      }
     }
     this._updateBuried(terrain);
     return null;
@@ -200,7 +228,8 @@ class Tank {
     const step = dir * speed * dt;
     const newX = Utils.clamp(this.x + step, 12, W - 12);
     const dh = terrain.heightAt(newX) - terrain.heightAt(this.x); // negative = uphill
-    const maxClimb = this.hasUpgrade('treads') ? 4.4 : 2.2;       // px height per px moved
+    let maxClimb = this.hasUpgrade('treads') ? 4.4 : 2.2;         // px height per px moved
+    if (terrain.isIce(this.x) || terrain.isIce(newX)) maxClimb = 0.6; // no grip on ice
     if (-dh > Math.abs(step) * maxClimb) return;                  // too steep
     const cost = Math.abs(step) * (this.hasUpgrade('engine') ? 0.09 : 0.18);
     if (this.fuel < cost) return;
@@ -319,7 +348,8 @@ class Tank {
 
     // shield dome (drawn unfaded even when buried)
     if (this.shield) this._drawShield(ctx, t);
-    if (this.hasUpgrade('magshield')) this._drawMagField(ctx, t);
+    if (this.magActive()) this._drawMagField(ctx, t); // hidden while EMP-fried
+    if (this.emp > 0) this._drawEmpFizzle(ctx, t);
 
     // name tag + health bar
     ctx.save();
@@ -347,6 +377,36 @@ class Tank {
     if (this.buried) {
       ctx.fillStyle = '#caa472';
       ctx.fillText('BURIED', x, y - 44 * s);
+    }
+    if (this.emp > 0) {
+      ctx.fillStyle = '#7fd4ff';
+      ctx.fillText('⚡EMP', x, y - (this.buried ? 54 : 44) * s);
+    }
+    if (this.team !== undefined) {
+      ctx.fillStyle = this.team === 0 ? '#7fd4ff' : '#ffb26b';
+      ctx.fillText(this.team === 0 ? '▲' : '▼', x + 30 * s, y - 34 * s);
+    }
+    ctx.restore();
+  }
+
+  /** Crackling arcs while electronics are EMP-fried. */
+  _drawEmpFizzle(ctx, t) {
+    const s = this.isBoss ? 1.6 : 1.0;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(150,220,255,0.8)';
+    ctx.lineWidth = 1.2;
+    ctx.globalAlpha = 0.4 + 0.4 * Math.abs(Math.sin(t * 17));
+    for (let i = 0; i < 3; i++) {
+      const a0 = t * 4 + i * 2.1;
+      let px = this.x + Math.cos(a0) * 18 * s;
+      let py = this.y - 10 * s + Math.sin(a0) * 12 * s;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      for (let k = 0; k < 3; k++) {
+        px += Utils.rand(-7, 7); py += Utils.rand(-6, 6);
+        ctx.lineTo(px, py);
+      }
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -516,6 +576,7 @@ class Tank {
       inventory: inv, upgrades: this.upgrades, ownedSkins: this.ownedSkins,
       skin: this.skin, selectedWeapon: this.selectedWeapon,
       shield: this.shield, predeployShield: this.predeployShield,
+      emp: this.emp, team: this.team, stats: this.stats,
     };
   }
 
@@ -537,6 +598,9 @@ class Tank {
     t.selectedWeapon = d.selectedWeapon || 'missile';
     t.shield = d.shield || null;
     t.predeployShield = !!d.predeployShield;
+    t.emp = d.emp || 0;
+    t.team = d.team;
+    if (d.stats) t.stats = Object.assign(t.stats, d.stats);
     return t;
   }
 }

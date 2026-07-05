@@ -46,6 +46,7 @@ const THEMES = [
     soilTop: '#221e26', soilBottom: '#0d0c10',
     texture: 'lava',
     weather: 'ash', windMax: 9,
+    eruptions: true, // ambient lava spouts fling burning droplets
   },
   {
     id: 'matrix', name: 'Cyberpunk Grid',

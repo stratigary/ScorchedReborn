@@ -392,6 +392,297 @@ vm.runInContext(`
   if (gc.awaitingConfirm) throw new Error('still awaiting confirm after proceed');
   if (gc.phase !== 'delay') throw new Error('weapon did not begin firing after confirmation');
 
+  /* ===== new weapons & systems (v1.2.0) ===== */
+
+  function flatGame(players, opts = {}) {
+    const g = new Game();
+    g.onShop = () => g.nextRound();
+    g.newMatch(Object.assign({ players, rounds: 3, wrap: false, sound: false }, opts));
+    for (let x = 0; x < 1600; x++) g.terrain.h[x] = 700;
+    g.terrain.dirty = true;
+    for (const t of g.tanks) t.y = g.terrain.heightAt(t.x);
+    g.wind = 0; g.turnIdx = 0; g.phase = 'aim';
+    return g;
+  }
+
+  // EMP: drains (not deletes-on-contact) shields, disables mag-shield and
+  // targeting for one turn, and wears off as that turn ends
+  {
+    const g = flatGame([{ name: 'E1', type: 'human' }, { name: 'E2', type: 'human' }]);
+    const [att, def] = g.tanks;
+    def.x = 500; def.y = 700; def.shield = { hp: 100, max: 100 };
+    def.upgrades.magshield = true;
+    g.applyEmp(def.x, def.y - 8, ItemCatalog.byId.emp, att, def);
+    if (!(def.shield && def.shield.hp < 100 && def.shield.hp > 0)) {
+      throw new Error('EMP did not partially drain the shield: ' + JSON.stringify(def.shield));
+    }
+    if (def.emp <= 0) throw new Error('EMP did not fry electronics');
+    if (def.magActive()) throw new Error('magshield still active while EMP-fried');
+    g.turnIdx = g.tanks.indexOf(def);
+    g.nextTurn();
+    if (def.emp !== 0) throw new Error('EMP did not wear off after the fried tank turn ended');
+    if (!def.magActive()) throw new Error('magshield did not return once EMP wore off');
+    console.log('EMP: shield ' + '100->' + Math.round(g.tanks[1].shield.hp) + ', mag disabled then restored OK');
+  }
+
+  // Glacier Bomb: freezes the surface (blast-proof + no landslide) and tanks slide on it
+  {
+    const g = flatGame([{ name: 'G1', type: 'human' }, { name: 'G2', type: 'human' }]);
+    g.applyGlacier(500, 700, ItemCatalog.byId.glacier, g.tanks[0]);
+    if (!g.terrain.isIce(500)) throw new Error('glacier bomb did not freeze the ground');
+    const beforeH = g.terrain.h[500];
+    g.terrain.crater(500, 700, 40); // craters must not carve frozen ground
+    if (g.terrain.h[500] !== beforeH) throw new Error('frozen terrain was cratered');
+    console.log('glacier: terrain frozen and crater-proof OK');
+  }
+
+  // Quake Charge: ripples the terrain and knocks nearby tanks off the ground
+  {
+    const g = flatGame([{ name: 'Q1', type: 'human' }, { name: 'Q2', type: 'human' }]);
+    const victim = g.tanks[1];
+    victim.x = 560; victim.y = g.terrain.heightAt(560);
+    const before = g.terrain.h.slice();
+    g.applyQuake(500, 700, ItemCatalog.byId.quake, g.tanks[0]);
+    let changed = false;
+    for (let x = 400; x < 600; x++) if (Math.abs(g.terrain.h[x] - before[x]) > 0.5) { changed = true; break; }
+    if (!changed) throw new Error('quake charge did not deform terrain');
+    console.log('quake: terrain rippled OK');
+  }
+
+  // Teleporter Round: owner relocates to the shell's impact point
+  {
+    const g = flatGame([{ name: 'T1', type: 'human' }, { name: 'T2', type: 'human' }]);
+    const t1 = g.tanks[0];
+    t1.x = 300; t1.y = g.terrain.heightAt(300);
+    g.applyTeleport(1200, g.terrain.heightAt(1200), t1);
+    if (Math.abs(t1.x - 1200) > 1) throw new Error('teleport did not relocate the tank: x=' + t1.x);
+    console.log('teleport: relocated to x=' + Math.round(t1.x) + ' OK');
+  }
+
+  // Acid Rain: seeds a drifting hazard that damages tanks it lands on
+  {
+    const g = flatGame([{ name: 'A1', type: 'human' }, { name: 'A2', type: 'human' }]);
+    const victim = g.tanks[1];
+    victim.x = 500; victim.y = g.terrain.heightAt(500);
+    g.applyAcidRain(500, 400, ItemCatalog.byId.acidrain, g.tanks[0]);
+    const before = victim.health;
+    for (let i = 0; i < 300; i++) { g.hazards.forEach(h => h.update(dt, g)); g.hazards = g.hazards.filter(h => !h.dead); }
+    if (victim.health >= before) throw new Error('acid rain drops never damaged the tank underneath');
+    console.log('acid rain: victim hp ' + before + '->' + victim.health + ' OK');
+  }
+
+  // Napalm MIRV: splits at apex, and the sub-warheads keep the napalm payload
+  {
+    const g = flatGame([{ name: 'N1', type: 'human' }, { name: 'N2', type: 'human' }]);
+    const shooter = g.tanks[0];
+    shooter.inventory.napalmmirv = 3; shooter.selectedWeapon = 'napalmmirv';
+    shooter.angle = 70; shooter.power = 75;
+    g.fire(shooter);
+    let sawNapalmSub = false;
+    let guard = 60 * 20;
+    while (g.phase !== 'aim' && g.phase !== 'roundend' && guard-- > 0) {
+      g.update(dt);
+      if (g.projectiles.some(p => p.isSub && p.def.special === 'napalm')) sawNapalmSub = true;
+    }
+    if (!sawNapalmSub) throw new Error('napalm MIRV sub-warheads did not retain the napalm special');
+    console.log('napalm MIRV: sub-warheads carried napalm payload OK');
+  }
+
+  // Carpet Bomb: schedules a bomber that drops a stick of sub-bombs
+  {
+    const g = flatGame([{ name: 'CB1', type: 'human' }, { name: 'CB2', type: 'human' }]);
+    g.scheduleCarpet(800, ItemCatalog.byId.carpet, g.tanks[0]);
+    const plane = g.hazards.find(h => h.kind === 'carpet');
+    if (!plane) throw new Error('carpet bomb did not schedule a bomber');
+    let guard = 400;
+    while (!plane.dead && guard-- > 0) { plane.update(dt, g); }
+    if (plane.dropped < ItemCatalog.byId.carpet.bombs) {
+      throw new Error('carpet bomber dropped ' + plane.dropped + ' of ' + ItemCatalog.byId.carpet.bombs + ' bombs');
+    }
+    console.log('carpet bomb: dropped ' + plane.dropped + '/' + ItemCatalog.byId.carpet.bombs + ' bombs OK');
+  }
+
+  // Meteor Shower: spawns the configured meteor count map-wide
+  {
+    const g = flatGame([{ name: 'MS1', type: 'human' }, { name: 'MS2', type: 'human' }]);
+    g.scheduleMeteors(ItemCatalog.byId.meteor, g.tanks[0]);
+    const storm = g.hazards.find(h => h.kind === 'meteors');
+    if (!storm) throw new Error('meteor shower did not schedule');
+    let spawned = 0, guard = 600;
+    while (!storm.dead && guard-- > 0) {
+      const before = g.projectiles.length;
+      storm.update(dt, g);
+      spawned += g.projectiles.length - before;
+    }
+    if (spawned < ItemCatalog.byId.meteor.count) throw new Error('meteor shower only spawned ' + spawned + ' meteors');
+    console.log('meteor shower: spawned ' + spawned + ' meteors OK');
+  }
+
+  // Decoy Tank: draws enemy homing missiles and pops when a shell bursts on it
+  {
+    const g = flatGame([{ name: 'D1', type: 'human' }, { name: 'D2', type: 'human' }]);
+    const decoyOwner = g.tanks[0], shooter = g.tanks[1];
+    decoyOwner.x = 50; // the real target, pushed far from the decoy
+    g.spawnDecoy(900, decoyOwner);
+    const decoy = g.hazards.find(h => h.kind === 'decoy');
+    if (!decoy) throw new Error('decoy did not spawn');
+    // enemy homing missile launched near the decoy should steer onto it, not the far real target
+    const homing = new Projectile(ItemCatalog.byId.homing, 900, 500, 0, 200, shooter, g);
+    for (let i = 0; i < 200 && !homing.dead; i++) homing.update(dt);
+    if (!decoy.dead) throw new Error('homing missile ignored the nearby decoy');
+    console.log('decoy: homing missile drawn to decoy and popped it OK');
+  }
+
+  // Grappling Shot: yanks nearby tanks toward the impact point
+  {
+    const g = flatGame([{ name: 'GR1', type: 'human' }, { name: 'GR2', type: 'human' }]);
+    const victim = g.tanks[1];
+    victim.x = 600; victim.y = g.terrain.heightAt(600);
+    const before = victim.x;
+    g.applyGrapple(500, 700, ItemCatalog.byId.grapple, g.tanks[0], null);
+    if (!(victim.x < before)) throw new Error('grapple did not pull the victim toward the impact: ' + before + '->' + victim.x);
+    console.log('grapple: victim pulled ' + before + '->' + Math.round(victim.x) + ' OK');
+  }
+
+  // The Refund: both halves of the gamble must be reachable
+  {
+    const g = flatGame([{ name: 'RF1', type: 'human' }, { name: 'RF2', type: 'human' }]);
+    const shooter = g.tanks[0];
+    shooter.inventory.refund = 2; shooter.selectedWeapon = 'refund';
+    shooter.angle = 60; shooter.power = 60;
+    const origRandom = Math.random;
+
+    Math.random = () => 0.9; // jackpot branch
+    g.phase = 'aim'; g.turnIdx = 0;
+    g.fire(g.tanks[0]);
+    let guard = 60 * 20;
+    while (g.phase !== 'aim' && g.phase !== 'roundend' && guard-- > 0) g.update(dt);
+    const jackpotHp = shooter.health;
+
+    shooter.inventory.refund = 1; shooter.health = 100;
+    Math.random = () => 0.1; // misfire branch: detonates in the barrel
+    g.phase = 'aim'; g.turnIdx = 0;
+    g.fire(g.tanks[0]);
+    guard = 60 * 20;
+    while (g.phase !== 'aim' && g.phase !== 'roundend' && guard-- > 0) g.update(dt);
+    Math.random = origRandom;
+    if (shooter.health >= 100) throw new Error('refund misfire did not damage the shooter: hp=' + shooter.health);
+    console.log('refund: jackpot hp=' + jackpotHp + ', misfire hp=' + shooter.health + ' OK');
+  }
+
+  // Shield Battery: tops off an active shield instead of stacking a new one
+  {
+    const g = flatGame([{ name: 'B1', type: 'human' }]);
+    const t = g.tanks[0];
+    t.shield = { hp: 40, max: 100 };
+    t.inventory.battery = 1;
+    if (!t.activateShield()) throw new Error('battery recharge was rejected');
+    if (t.shield.hp !== 90) throw new Error('battery should add 50 hp: got ' + t.shield.hp);
+    if (t.ammo('battery') !== 0) throw new Error('battery not consumed');
+  }
+
+  // Teams mode: alternating assignment, no friendly-fire credit, round ends
+  // only when a single team remains
+  {
+    const g = flatGame(
+      [{ name: 'TA1', type: 'human' }, { name: 'TB1', type: 'human' },
+       { name: 'TA2', type: 'human' }, { name: 'TB2', type: 'human' }],
+      { mode: 'teams' });
+    const [a1, b1, a2, b2] = g.tanks;
+    if (a1.team !== 0 || a2.team !== 0 || b1.team !== 1 || b2.team !== 1) {
+      throw new Error('teams not assigned by alternating slot: ' + g.tanks.map(t => t.team));
+    }
+    // one teammate down, partner alive: round must continue
+    b1.alive = false;
+    if (g.checkRoundEnd()) throw new Error('round ended with a surviving teammate on the losing team');
+    // friendly fire deals damage but earns no cash/credit
+    const cashBefore = a1.cash;
+    g.damageTank(a2, 20, a1, true);
+    if (a1.cash !== cashBefore) throw new Error('teammate damage paid out cash: ' + cashBefore + '->' + a1.cash);
+    // wipe the other team: round should end now
+    b2.alive = false;
+    if (!g.checkRoundEnd()) throw new Error('round did not end when only one team remained');
+    console.log('teams: alternating assignment + no friendly-fire payout + win condition OK');
+  }
+
+  // Interest: 5% of cash on hand is added at round end
+  {
+    const g = flatGame([{ name: 'I1', type: 'human' }, { name: 'I2', type: 'human' }]);
+    g.tanks[0].cash = 10000; g.tanks[1].alive = false;
+    const before = g.tanks[0].cash;
+    g.checkRoundEnd();
+    if (g.tanks[0].cash < before + 490) throw new Error('interest not applied: ' + before + '->' + g.tanks[0].cash);
+    console.log('interest: ' + before + ' -> ' + g.tanks[0].cash + ' OK');
+  }
+
+  // Volcanic eruptions: the volcano theme flags ambient lava spouts
+  {
+    const volcano = THEMES.find(th => th.id === 'volcano');
+    if (!volcano || !volcano.eruptions) throw new Error('volcano theme missing the eruptions flag');
+  }
+
+  // Boss HP: HUD fraction must use maxHealth (600), not a hardcoded 100
+  {
+    const g = flatGame([{ name: 'BOSS1', type: 'human' }, { name: 'BOSS2', type: 'behemoth' }]);
+    const boss = g.tanks[1];
+    boss.health = 300;
+    if (boss.maxHealth !== 600) throw new Error('boss maxHealth should be 600, got ' + boss.maxHealth);
+    if (Math.abs(boss.health / boss.maxHealth - 0.5) > 0.001) throw new Error('boss HP fraction miscalculated');
+  }
+
+  // End-of-match awards ceremony: stats accumulate and surface correctly
+  {
+    const g = flatGame([{ name: 'AW1', type: 'human' }, { name: 'AW2', type: 'human' }]);
+    const t = g.tanks[0];
+    g.damageTank(t, 15, t); // self-damage
+    t.stats.offMap = 2;
+    t.stats.buriedTurns = 3;
+    t.stats.bigHit = 77;
+    t.stats.earned = 5000;
+    const awards = g._computeAwards();
+    const titles = awards.map(a => a.title).join('|');
+    if (!titles.includes('GLASS CANNON')) throw new Error('self-damage award missing: ' + titles);
+    if (!titles.includes('ASTRONOMER')) throw new Error('off-map award missing: ' + titles);
+    if (!titles.includes('ONE-HIT WONDER')) throw new Error('big-hit award missing: ' + titles);
+    console.log('awards: ' + awards.length + ' honors computed OK');
+  }
+
+  // Last-impact marker: fired shots record where they land, for the aim aid
+  {
+    const g = flatGame([{ name: 'M1', type: 'human' }, { name: 'M2', type: 'human' }]);
+    const shooter = g.tanks[0];
+    if (shooter.lastImpact) throw new Error('lastImpact should start unset');
+    g.applyExplosion(900, 700, ItemCatalog.byId.missile, shooter, {});
+    if (!shooter.lastImpact || Math.abs(shooter.lastImpact.x - 900) > 1) {
+      throw new Error('lastImpact not recorded on the shooter');
+    }
+    console.log('last-impact marker recorded OK');
+  }
+
+  // Fine aim: adjustAngle/adjustPower accept fractional multipliers (Shift key)
+  {
+    const g = flatGame([{ name: 'FA1', type: 'human' }, { name: 'FA2', type: 'human' }]);
+    const t = g.tanks[0];
+    t.angle = 90; t.power = 50;
+    g.adjustAngle(0.08, 1); // one simulated fine-aim second
+    g.adjustPower(0.08, 1);
+    if (Math.abs(t.angle - 90) >= 40 * 1) throw new Error('fine aim multiplier not reducing angle step');
+    if (t.angle === 90) throw new Error('fine aim produced no movement at all');
+  }
+
+  // Shield-chip payout: draining a shield now earns cash/XP at half rate
+  {
+    const g = flatGame([{ name: 'SC1', type: 'human' }, { name: 'SC2', type: 'human' }]);
+    const att = g.tanks[0], def = g.tanks[1];
+    def.shield = { hp: 100, max: 100 };
+    const cashBefore = att.cash;
+    g.damageTank(def, 40, att, true); // fully absorbed by the shield
+    if (att.cash <= cashBefore) throw new Error('shield-chip damage paid out no cash to the attacker');
+    console.log('shield-chip payout: cash ' + cashBefore + '->' + att.cash + ' OK');
+  }
+
+  console.log('v1.2.0 weapons & systems: all checks passed');
+
   // exercise weather configurations: calm, windy, wtf
   const gw = new Game();
   gw.onShop = () => gw.nextRound();

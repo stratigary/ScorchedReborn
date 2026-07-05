@@ -1,7 +1,7 @@
 'use strict';
 /* ===== Global constants & helpers ===== */
 
-const GAME_VERSION = 'v1.1.0'; // shown under the menu title; bump on release
+const GAME_VERSION = 'v1.2.0'; // shown under the menu title; bump on release
 
 const W = 1600;            // world / canvas width
 const H = 900;             // world / canvas height
@@ -51,3 +51,8 @@ function levelForXP(xp) {
 }
 
 const PLAYER_COLORS = ['#ff5252', '#42a5f5', '#ffd54f', '#9ccc65', '#ba68c8', '#ff9800'];
+
+/** True only in teams mode when both are on the same side. */
+function areAllies(a, b) {
+  return !!a && !!b && a.team !== undefined && b.team !== undefined && a.team === b.team;
+}

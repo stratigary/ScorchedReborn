@@ -9,6 +9,7 @@ class Terrain {
     this.seed = seed === undefined ? Math.floor(Math.random() * 1e9) : seed;
     this.h = new Float32Array(W);
     this.soot = new Float32Array(W);
+    this.ice = new Uint8Array(W); // frozen columns: slick + blast-proof
     this.indestructible = new Float32Array(W);
     this.indestructible.fill(BEDROCK_Y);
     this.dirty = true;        // terrain cache needs redraw
@@ -138,6 +139,21 @@ class Terrain {
     this.dirty = true;
   }
 
+  /** Freeze a stretch of surface: locks it against craters and turns it slick. */
+  freeze(cx, halfWidth) {
+    const x0 = Math.max(0, Math.floor(cx - halfWidth));
+    const x1 = Math.min(W - 1, Math.ceil(cx + halfWidth));
+    for (let x = x0; x <= x1; x++) {
+      this.ice[x] = 1;
+      this.indestructible[x] = Math.min(this.indestructible[x], this.h[x]);
+    }
+    this.dirty = true;
+  }
+
+  isIce(x) {
+    return !!this.ice[Utils.clamp(Math.round(x), 0, W - 1)];
+  }
+
   /** Melt away `amount` px of ground at column x (napalm). */
   melt(x, amount) {
     const xi = Math.round(Utils.clamp(x, 0, W - 1));
@@ -168,6 +184,7 @@ class Terrain {
       for (let i = 1; i < W; i++) {
         const x = ltr ? i : W - i;
         const a = x - 1, b = x;
+        if (this.ice[a] || this.ice[b]) continue; // frozen columns don't slide
         // h[a] > h[b] means column a's surface is LOWER than b's (y grows down)
         const diff = h[a] - h[b];
         if (diff > MAX_DIFF) {
@@ -189,6 +206,8 @@ class Terrain {
       seed: this.seed,
       h: Array.from(this.h, v => Math.round(v * 10) / 10),
       soot: Array.from(this.soot, v => Math.round(v * 100) / 100),
+      ice: Array.from(this.ice),
+      indestructible: Array.from(this.indestructible, v => Math.round(v)),
     };
   }
 
@@ -198,6 +217,12 @@ class Terrain {
     t.soot = new Float32Array(W);
     if (data.soot) {
       for (let x = 0; x < W && x < data.soot.length; x++) t.soot[x] = data.soot[x];
+    }
+    if (data.ice) {
+      for (let x = 0; x < W && x < data.ice.length; x++) t.ice[x] = data.ice[x];
+    }
+    if (data.indestructible) {
+      for (let x = 0; x < W && x < data.indestructible.length; x++) t.indestructible[x] = data.indestructible[x];
     }
     t.dirty = true;
     return t;

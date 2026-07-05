@@ -72,7 +72,7 @@ class Projectile {
 
       // magnetic shields deflect enemy shells (never the owner's own rounds)
       for (const t of g.tanks) {
-        if (!t.alive || t === this.owner || !t.hasUpgrade('magshield')) continue;
+        if (!t.alive || t === this.owner || !t.magActive()) continue;
         const dx = this.x - t.x, dy = this.y - (t.y - 10);
         const d = Math.hypot(dx, dy);
         if (d < 150 && d > 1) {
@@ -99,7 +99,10 @@ class Projectile {
         else if (this.x >= W) this.x -= W;
       } else if (this.x < -250 || this.x > W + 250) {
         this.dead = true;
-        if (!this.isSub) g._feat(this.owner, 'void'); // sailed clean off the map
+        if (!this.isSub && this.owner) {
+          this.owner.stats.offMap++;
+          g._feat(this.owner, 'void'); // sailed clean off the map
+        }
         return;
       }
       if (this.y > H + 100) { this.dead = true; return; }
@@ -108,6 +111,12 @@ class Projectile {
       const hitTank = this._checkTankHit();
       if (hitTank) {
         this._impact(hitTank);
+        return;
+      }
+
+      // decoy hit? (inflatables are physical: shells burst on them)
+      if (this._checkDecoyHit()) {
+        this._impact(null);
         return;
       }
 
@@ -129,9 +138,15 @@ class Projectile {
     const g = this.game;
     let best = null, bd = 1e9;
     for (const t of g.tanks) {
-      if (!t.alive || t === this.owner) continue;
+      if (!t.alive || t === this.owner || areAllies(t, this.owner)) continue;
       const d = Utils.dist(this.x, this.y, t.x, t.y);
       if (d < bd) { bd = d; best = t; }
+    }
+    // decoys smell like tanks to a seeker head — better, even
+    for (const hz of g.hazards) {
+      if (hz.kind !== 'decoy' || hz.dead || hz.owner === this.owner) continue;
+      const d = Utils.dist(this.x, this.y, hz.x, hz.y) * 0.7;
+      if (d < bd) { bd = d; best = hz; }
     }
     if (!best) return;
     const speed = Math.hypot(this.vx, this.vy) || 1;
@@ -164,13 +179,22 @@ class Projectile {
     return null;
   }
 
+  _checkDecoyHit() {
+    for (const hz of this.game.hazards) {
+      if (hz.kind !== 'decoy' || hz.dead) continue;
+      if (Utils.dist(this.x, this.y, hz.x, hz.y - 8) <= 16) return true;
+    }
+    return false;
+  }
+
   _mirvSplit() {
     const g = this.game;
     this.split = true;
     AudioEngine.click();
     FX.ring(this.x, this.y, 28, 0.3, '#ffe9a0');
     const n = this.def.splitCount || 3;
-    const subDef = Object.assign({}, this.def, { special: null });
+    // Napalm MIRV subs keep their payload; plain MIRVs become dumb shells
+    const subDef = Object.assign({}, this.def, { special: this.def.subSpecial || null });
     const half = (n - 1) / 2;
     for (let i = 0; i < n; i++) {
       const off = i - half; // symmetric spread around the flight path
@@ -215,7 +239,36 @@ class Projectile {
         g.applyFissure(this.x, this.y, this.def, this.owner);
         break;
       case 'napalm':
-        g.applyNapalm(this.x, this.y, this.owner);
+        g.applyNapalm(this.x, this.y, this.owner, this.def.napalmCount);
+        break;
+      case 'glacier':
+        g.applyGlacier(this.x, this.y, this.def, this.owner);
+        break;
+      case 'quake':
+        g.applyQuake(this.x, this.y, this.def, this.owner);
+        break;
+      case 'teleport':
+        g.applyTeleport(this.x, this.y, this.owner);
+        break;
+      case 'acid':
+        g.applyAcidRain(this.x, this.y, this.def, this.owner);
+        break;
+      case 'emp':
+        g.applyEmp(this.x, this.y, this.def, this.owner, hitTank);
+        break;
+      case 'grapple':
+        g.applyGrapple(this.x, this.y, this.def, this.owner, hitTank);
+        break;
+      case 'carpet':
+        g.scheduleCarpet(this.x, this.def, this.owner);
+        g.applyExplosion(this.x, this.y, { dmg: this.def.dmg, radius: this.def.radius }, this.owner, { direct: hitTank });
+        break;
+      case 'meteor':
+        g.scheduleMeteors(this.def, this.owner);
+        g.applyExplosion(this.x, this.y, { dmg: this.def.dmg, radius: this.def.radius }, this.owner, { direct: hitTank });
+        break;
+      case 'decoy':
+        g.spawnDecoy(this.x, this.owner);
         break;
       case 'maser':
         // shell only marks the spot — the orbital MASER does the killing
@@ -271,7 +324,7 @@ class Projectile {
     this.rollV *= (1 - 0.55 * dt);           // rolling friction
     // magnetic shields shove rolling shells back too
     for (const t of g.tanks) {
-      if (!t.alive || t === this.owner || !t.hasUpgrade('magshield')) continue;
+      if (!t.alive || t === this.owner || !t.magActive()) continue;
       const dx = this.x - t.x;
       const d = Math.abs(dx);
       if (d < 100) this.rollV += Math.sign(dx || 1) * 420 * (1 - d / 100) * dt;
@@ -610,6 +663,228 @@ class RodStrike {
     ctx.moveTo(this.x, 0); ctx.lineTo(this.x, 40);
     ctx.stroke();
     ctx.restore();
+  }
+}
+
+class Decoy {
+  /** Inflatable tank: draws homing missiles and bot fire until it pops. */
+  constructor(x, owner, game) {
+    this.kind = 'decoy';
+    this.owner = owner;
+    this.x = Utils.clamp(x, 20, W - 20);
+    this.y = game.terrain.heightAt(this.x);
+    this.hp = 40;
+    this.dead = false;
+    this.wobble = Math.random() * TAU;
+  }
+
+  update(dt, game) {
+    // settle onto (possibly deformed) terrain
+    this.y = game.terrain.heightAt(this.x);
+    this.wobble += dt * 3;
+  }
+
+  hit(dmg) {
+    this.hp -= dmg;
+    if (this.hp <= 0 && !this.dead) {
+      this.dead = true;
+      AudioEngine.bounce(this.x);
+      FX.ring(this.x, this.y - 10, 30, 0.35, '#e8d9a0');
+      for (let i = 0; i < 10; i++) {
+        FX.spawn({
+          x: this.x, y: this.y - 8, vx: Utils.rand(-120, 120), vy: Utils.rand(-160, -20),
+          life: Utils.rand(0.3, 0.7), size: Utils.rand(2, 4), color: '#d8c890', grav: 0.6, kind: 'spark',
+        });
+      }
+    }
+  }
+
+  draw(ctx, t) {
+    const x = this.x, y = this.y;
+    const sway = Math.sin(this.wobble) * 0.06;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(sway);
+    // balloon hull, slightly over-inflated and matte
+    ctx.fillStyle = '#b8ac7e';
+    ctx.beginPath();
+    ctx.ellipse(0, -9, 16, 8.5, 0, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = '#a89a6c';
+    ctx.fillRect(-13, -5, 26, 5);
+    // painted-on turret
+    ctx.strokeStyle = '#8a7d55';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, -13);
+    ctx.lineTo(12, -22);
+    ctx.stroke();
+    // seam lines give the inflatable away up close
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(0, -9, 10, 5.5, 0, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+class CarpetPlane {
+  /** Bomber crossing the sky, laying a stick of bombs across the mark. */
+  constructor(x, def, owner, game) {
+    this.kind = 'carpet';
+    this.def = def;
+    this.owner = owner;
+    this.targetX = x;
+    this.dir = x > W / 2 ? -1 : 1;      // enter from the far side
+    this.x = this.dir > 0 ? -60 : W + 60;
+    this.y = 64;
+    this.speed = 420;
+    this.dropped = 0;
+    this.bombs = def.bombs || 8;
+    this.band = 250;                     // half-width of the bombing run
+    this.dead = false;
+    AudioEngine.click();
+  }
+
+  update(dt, game) {
+    this.x += this.dir * this.speed * dt;
+    if ((this.dir > 0 && this.x > W + 80) || (this.dir < 0 && this.x < -80)) { this.dead = true; return; }
+    const inBand = Math.abs(this.x - this.targetX) < this.band;
+    if (inBand && this.dropped < this.bombs) {
+      const spacing = (this.band * 2) / this.bombs;
+      const nextAt = this.targetX - this.dir * this.band + this.dir * this.dropped * spacing;
+      if ((this.dir > 0 && this.x >= nextAt) || (this.dir < 0 && this.x <= nextAt)) {
+        const bombDef = { dmg: this.def.subDmg || 22, radius: this.def.subRadius || 22 };
+        const p = new Projectile(bombDef, this.x, this.y + 8, this.dir * this.speed * 0.35, 40, this.owner, game);
+        p.isSub = true;
+        game.projectiles.push(p);
+        this.dropped++;
+        if (this.dropped % 3 === 1) AudioEngine.launch(this.x);
+      }
+    }
+  }
+
+  draw(ctx, t) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.scale(this.dir, 1);
+    ctx.fillStyle = '#39404f';
+    // fuselage
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 26, 6, 0, 0, TAU);
+    ctx.fill();
+    // wings + tail
+    ctx.beginPath();
+    ctx.moveTo(-4, 0); ctx.lineTo(-14, -12); ctx.lineTo(2, -2);
+    ctx.moveTo(-4, 0); ctx.lineTo(-14, 12); ctx.lineTo(2, 2);
+    ctx.moveTo(-24, 0); ctx.lineTo(-30, -8); ctx.lineTo(-20, -1);
+    ctx.fill();
+    ctx.fillStyle = '#7fd4ff';
+    ctx.fillRect(14, -3, 6, 3);
+    ctx.restore();
+  }
+}
+
+class MeteorStorm {
+  /** Spawns meteors at random columns across the whole map for ~3 seconds. */
+  constructor(def, owner, game) {
+    this.kind = 'meteors';
+    this.def = def;
+    this.owner = owner;
+    this.remaining = def.count || 10;
+    this.timer = 0.4;
+    this.dead = false;
+  }
+
+  update(dt, game) {
+    this.timer -= dt;
+    if (this.timer <= 0 && this.remaining > 0) {
+      this.remaining--;
+      this.timer = Utils.rand(0.15, 0.35);
+      const mDef = { dmg: this.def.subDmg || 20, radius: this.def.subRadius || 26 };
+      const p = new Projectile(mDef, Utils.rand(30, W - 30), -30,
+        Utils.rand(-90, 90) + game.wind * 6, Utils.rand(550, 850), this.owner, game);
+      p.isSub = true;
+      game.projectiles.push(p);
+      AudioEngine.click();
+    }
+    if (this.remaining <= 0) this.dead = true;
+  }
+
+  draw() { /* the meteors draw themselves */ }
+}
+
+class AcidStorm {
+  /** Corrosive drizzle over a band that drifts downwind of the impact. */
+  constructor(x, def, owner, game) {
+    this.kind = 'acidstorm';
+    this.def = def;
+    this.owner = owner;
+    this.cx = x;
+    this.life = 4.0;
+    this.dead = false;
+    this._acc = 0;
+  }
+
+  update(dt, game) {
+    this.life -= dt;
+    if (this.life <= 0) { this.dead = true; return; }
+    this.cx = Utils.clamp(this.cx + game.wind * 6 * dt, 40, W - 40);
+    this._acc += dt;
+    const alive = game.hazards.reduce((n, h) => n + (h.kind === 'aciddrop' && !h.dead ? 1 : 0), 0);
+    while (this._acc > 0.06 && alive < 46) {
+      this._acc -= 0.06;
+      game.hazards.push(new AcidDrop(this.cx + Utils.rand(-140, 140), -8, this.owner));
+    }
+  }
+
+  draw(ctx, t) {
+    // sickly cloud bank hinting at the drop zone
+    ctx.save();
+    ctx.globalAlpha = 0.16 + 0.05 * Math.sin(t * 3);
+    ctx.fillStyle = '#9fd44a';
+    ctx.beginPath();
+    ctx.ellipse(this.cx, 26, 160, 20, 0, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class AcidDrop {
+  constructor(x, y, owner) {
+    this.kind = 'aciddrop';
+    this.x = x; this.y = y;
+    this.vy = Utils.rand(220, 330);
+    this.owner = owner;
+    this.dead = false;
+    this._dmgAcc = 0;
+  }
+
+  update(dt, game) {
+    this.y += this.vy * dt;
+    this.x += game.wind * 4 * dt;
+    if (this.x < 0 || this.x >= W || this.y > H) { this.dead = true; return; }
+    // burn any tank it lands on
+    for (const t of game.tanks) {
+      if (!t.alive) continue;
+      if (Utils.dist(this.x, this.y, t.x, t.y - 8) < 16) {
+        game.damageTank(t, 3, this.owner, false, true);
+        this.dead = true;
+        FX.sparkTrail(this.x, this.y, '#aaff5a');
+        return;
+      }
+    }
+    if (game.terrain.isSolid(this.x, this.y)) {
+      game.terrain.melt(this.x, 1.2);
+      this.dead = true;
+      if (Math.random() < 0.4) FX.sparkTrail(this.x, this.y, '#8fd44a');
+    }
+  }
+
+  draw(ctx) {
+    ctx.fillStyle = 'rgba(160,255,90,0.8)';
+    ctx.fillRect(this.x - 0.8, this.y - 4, 1.6, 6);
   }
 }
 

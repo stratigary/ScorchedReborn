@@ -48,12 +48,14 @@
         <label class="opt">Game Mode
           <select id="opt-mode">
             <option value="standard" selected>Standard</option>
+            <option value="teams">Teams (slots alternate A/B)</option>
             <option value="behemoth">Boss: The Behemoth</option>
             <option value="windstorm">Challenge: Wind Storm</option>
           </select>
         </label>
         <label class="opt"><input type="checkbox" id="opt-wrap"> Screen wrap-around</label>
         <label class="opt"><input type="checkbox" id="opt-nolevels"> Unlock everything (no level system)</label>
+        <label class="opt"><input type="checkbox" id="opt-fastbots"> Fast bot turns (2× speed)</label>
         <label class="opt"><input type="checkbox" id="opt-sound" checked> Sound &amp; music</label>
       </div>
 
@@ -63,8 +65,8 @@
       </div>
 
       <div class="help">
-        <b>Controls:</b> ←/→ aim turret &nbsp;·&nbsp; ↑/↓ power &nbsp;·&nbsp; A/D drive
-        &nbsp;·&nbsp; Q/E weapon &nbsp;·&nbsp; X shield &nbsp;·&nbsp; SPACE fire (hold to charge) &nbsp;·&nbsp; ESC pause
+        <b>Controls:</b> ←/→ aim turret &nbsp;·&nbsp; ↑/↓ power &nbsp;·&nbsp; SHIFT fine aim &nbsp;·&nbsp; A/D drive
+        &nbsp;·&nbsp; Q/E weapon &nbsp;·&nbsp; X shield/battery &nbsp;·&nbsp; SPACE fire (hold to charge) &nbsp;·&nbsp; ESC pause
       </div>
     </div>
   </div>
@@ -106,6 +108,7 @@
       <h2>PAUSED</h2>
       <button id="btn-pause-resume" class="btn btn-primary">RESUME</button>
       <label class="opt"><input type="checkbox" id="pause-wrap"> Screen wrap-around</label>
+      <label class="opt"><input type="checkbox" id="pause-fastbots"> Fast bot turns (2× speed)</label>
       <label class="opt"><input type="checkbox" id="pause-sound"> Sound &amp; music</label>
       <label class="opt slider-opt">MUSIC
         <input type="range" id="pause-music" min="0" max="100" step="1">
@@ -120,10 +123,11 @@
         <b>Controls</b><br>
         ←/→ &nbsp;aim turret (0°–180°)<br>
         ↑/↓ &nbsp;fire power (1–100)<br>
+        SHIFT &nbsp;hold for fine aim<br>
         SPACE &nbsp;fire — hold to charge<br>
         A/D &nbsp;drive left / right<br>
         Q/E/Tab &nbsp;cycle weapons<br>
-        X &nbsp;activate shield · ESC pause
+        X &nbsp;shield / battery recharge · ESC pause
       </div>
     </div>
   </div>
@@ -145,6 +149,7 @@
     <div class="panel gameover-panel">
       <h2 id="go-title">VICTORY</h2>
       <div id="go-standings" class="standings big"></div>
+      <div id="go-awards" class="go-awards"></div>
       <button id="btn-go-menu" class="btn btn-primary">BACK TO MENU</button>
     </div>
   </div>

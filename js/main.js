@@ -100,6 +100,7 @@
       sound,
       mode,
     });
+    game.settings.fastBots = document.getElementById('opt-fastbots').checked;
     if (sound) AudioEngine.startMusic();
     inMenu = false;
     elMenu.classList.add('hidden');
@@ -157,15 +158,26 @@
 
   game.onShop = () => shop.open(game, () => game.nextRound());
 
-  game.onGameOver = (standings) => {
+  game.onGameOver = (standings, awards) => {
     AudioEngine.humReset();
     const title = document.getElementById('go-title');
     const list = document.getElementById('go-standings');
-    title.textContent = standings.length ? `${standings[0].name} WINS THE WAR` : 'GAME OVER';
+    if (game.settings.mode === 'teams' && standings.length) {
+      const totals = [0, 0];
+      for (const s of standings) if (s.team !== undefined) totals[s.team] += s.score;
+      title.textContent = `TEAM ${totals[0] >= totals[1] ? 'ALPHA' : 'BRAVO'} WINS THE WAR`;
+    } else {
+      title.textContent = standings.length ? `${standings[0].name} WINS THE WAR` : 'GAME OVER';
+    }
     list.innerHTML = standings.map((s, i) =>
-      `<div><span class="st-name" style="color:${s.color}">${i + 1}. ${s.name}</span>` +
+      `<div><span class="st-name" style="color:${s.color}">${i + 1}. ` +
+      `${s.team !== undefined ? (s.team === 0 ? '[A] ' : '[B] ') : ''}${s.name}</span>` +
       `<span class="st-score">◆ ${s.score}</span>` +
       `${game.settings.noLevels ? '' : ' &nbsp; Lv' + s.level}</div>`).join('');
+    const awardsEl = document.getElementById('go-awards');
+    awardsEl.innerHTML = (awards || []).map(a =>
+      `<div class="award"><span class="award-title">${a.title}:</span> ` +
+      `<span style="color:${a.color}">${a.name}</span> <span class="award-val">(${a.value})</span></div>`).join('');
     elGameOver.classList.remove('hidden');
   };
 
@@ -209,6 +221,7 @@
     elPause.classList.toggle('hidden', !on);
     if (on) {
       document.getElementById('pause-wrap').checked = game.settings.wrap;
+      document.getElementById('pause-fastbots').checked = !!game.settings.fastBots;
       document.getElementById('pause-sound').checked = game.settings.sound;
       syncVolumeSliders();
     }
@@ -217,6 +230,9 @@
   document.getElementById('btn-pause-resume').addEventListener('click', () => setPaused(false));
   document.getElementById('pause-wrap').addEventListener('change', e => {
     game.settings.wrap = e.target.checked;
+  });
+  document.getElementById('pause-fastbots').addEventListener('change', e => {
+    game.settings.fastBots = e.target.checked;
   });
   document.getElementById('pause-sound').addEventListener('change', e => {
     game.settings.sound = e.target.checked;
@@ -284,10 +300,12 @@
 
   function applyHeldKeys(dt) {
     if (!game.humanCanAct) { charging = false; return; }
-    if (keys.ArrowLeft) game.adjustAngle(1, dt);   // left arrow tilts barrel left (toward 180)
-    if (keys.ArrowRight) game.adjustAngle(-1, dt);
-    if (keys.ArrowUp) game.adjustPower(1, dt);
-    if (keys.ArrowDown) game.adjustPower(-1, dt);
+    // hold SHIFT for surgeon-grade aim adjustments
+    const fine = (keys.ShiftLeft || keys.ShiftRight) ? 0.08 : 1;
+    if (keys.ArrowLeft) game.adjustAngle(fine, dt);   // left arrow tilts barrel left (toward 180)
+    if (keys.ArrowRight) game.adjustAngle(-fine, dt);
+    if (keys.ArrowUp) game.adjustPower(fine, dt);
+    if (keys.ArrowDown) game.adjustPower(-fine, dt);
     if (keys.KeyA) game.drive(-1, dt);
     if (keys.KeyD) game.drive(1, dt);
     if (charging) {
@@ -325,6 +343,11 @@
       if (!inMenu) {
         applyHeldKeys(STEP);
         game.update(STEP);
+        // fast-forward bot turns: double-step while a bot holds the floor
+        if (game.settings.fastBots && game.activeTank && game.activeTank.isBot &&
+            (game.phase === 'aim' || game.phase === 'delay' || game.phase === 'sim')) {
+          game.update(STEP);
+        }
       } else {
         if (typeof updateSky !== 'undefined' && menuState) {
           updateSky(menuState, STEP, 0);

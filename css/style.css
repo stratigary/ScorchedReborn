@@ -59,6 +59,10 @@ html, body {
 }
 .title-accent { color: var(--neon); text-shadow: 0 0 18px rgba(57,255,106,0.9); }
 .version { margin-top: 2px; color: #55688a; font-size: 11px; letter-spacing: 3px; }
+.go-awards { margin: 14px 0 6px; font-size: 12px; color: #9fb4d8; text-align: left; }
+.go-awards .award { padding: 2px 0; }
+.go-awards .award-title { color: #ffd54f; }
+.go-awards .award-val { color: #7d93b8; }
 .tagline { margin: 8px 0 22px; color: #7d93b8; font-size: 13px; letter-spacing: 2px; }
 
 #player-slots { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }

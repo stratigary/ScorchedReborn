@@ -69,6 +69,8 @@ class AIController {
     // shield decision
     if (!t.shield && t.ammo('shield') > 0 && Math.random() < this.profile.shieldChance) {
       t.activateShield();
+    } else if (t.shield && t.shield.hp < 45 && t.ammo('battery') > 0) {
+      t.activateShield(); // tops the shield off from a battery
     }
     this._pickWeapon(game);
 
@@ -219,8 +221,8 @@ class AIController {
     } else if (pick === 'best' || pick === 'heavy') {
       // prefer reliably-simulated ballistic heavy hitters
       const pref = pick === 'heavy'
-        ? ['neutron', 'thermo', 'singularity', 'kinetic', 'tacnuke', 'railgun', 'mirv', 'babynuke', 'homing', 'laser']
-        : ['tacnuke', 'railgun', 'mirv', 'homing', 'babynuke', 'laser', 'thermo', 'singularity'];
+        ? ['neutron', 'thermo', 'meteor', 'singularity', 'carpet', 'kinetic', 'tacnuke', 'napalmmirv', 'railgun', 'mirv', 'babynuke', 'homing', 'laser']
+        : ['tacnuke', 'railgun', 'mirv', 'napalmmirv', 'homing', 'babynuke', 'laser', 'thermo', 'singularity'];
       chosen = null;
       for (const id of pref) {
         const w = owned.find(o => o.id === id);
@@ -238,14 +240,17 @@ class AIController {
 
   _plan(game) {
     const t = this.tank;
-    const enemies = game.tanks.filter(o => o.alive && o !== t);
+    const enemies = game.tanks.filter(o => o.alive && o !== t && !areAllies(o, t));
     if (!enemies.length) { this.targetAngle = 90; this.targetPower = 50; return; }
-    // nearest enemy (novice picks a random one)
+    // enemy decoys read as real contacts on the targeting scope
+    const contacts = enemies.concat(
+      game.hazards.filter(h => h.kind === 'decoy' && !h.dead && h.owner !== t && !areAllies(h.owner, t)));
+    // nearest contact (novice picks a random one)
     let target;
-    if (this.tank.type === 'novice') target = Utils.choice(enemies);
+    if (this.tank.type === 'novice') target = Utils.choice(contacts);
     else {
-      enemies.sort((a, b) => Math.abs(a.x - t.x) - Math.abs(b.x - t.x));
-      target = enemies[0];
+      contacts.sort((a, b) => Math.abs(a.x - t.x) - Math.abs(b.x - t.x));
+      target = contacts[0];
     }
 
     const p = this.profile;
@@ -293,8 +298,10 @@ class AIController {
       power += downwind ? -mag : mag;
     }
 
-    angle += Utils.rand(-p.errAngle, p.errAngle);
-    power += Utils.rand(-p.errPower, p.errPower);
+    // fried fire-control: EMP'd bots aim like novices this turn
+    const empErr = t.emp > 0 ? 8 : 0;
+    angle += Utils.rand(-p.errAngle - empErr, p.errAngle + empErr);
+    power += Utils.rand(-p.errPower - empErr, p.errPower + empErr);
     this.targetAngle = Utils.clamp(angle, 2, 178);
     this.targetPower = Utils.clamp(power, 10, 100);
   }
@@ -361,6 +368,8 @@ function botShop(tank, game) {
   }
   const sh = ItemCatalog.byId.shield;
   while (tank.ammo('shield') < 2 && affordable(sh)) buyW(sh);
+  const bat = ItemCatalog.byId.battery;
+  if (tank.ammo('battery') < 1 && affordable(bat)) buyW(bat);
   if ((tank.gatesOff || lvl >= 2) && !tank.predeployShield && tank.cash >= ItemCatalog.byId.predeploy.price) {
     tank.cash -= ItemCatalog.byId.predeploy.price;
     tank.predeployShield = true;
@@ -368,7 +377,7 @@ function botShop(tank, game) {
   const pc = ItemCatalog.byId.parachute;
   while (tank.ammo('parachute') < 2 && affordable(pc)) buyW(pc);
   // heavy weapons: nuclear, singularity, orbital
-  const heavy = ['neutron', 'thermo', 'singularity', 'kinetic', 'laser', 'railgun', 'mirv', 'tacnuke', 'napalm', 'babynuke'];
+  const heavy = ['neutron', 'thermo', 'meteor', 'singularity', 'carpet', 'kinetic', 'emp', 'laser', 'railgun', 'napalmmirv', 'mirv', 'tacnuke', 'napalm', 'babynuke'];
   let spent = true;
   while (spent) {
     spent = false;
