@@ -23,6 +23,18 @@ const SAYINGS = {
       "Free delivery. Mandatory tip.",
       "Thoughts and prayers, outgoing!",
       "Return to sender? Not this time.",
+      "Loot drops where you land!",
+      "Consider this your performance review.",
+      "New quest available: SURVIVE THIS.",
+      "Warranty voids on impact!",
+      "The viewers demand content!",
+      "Physics homework, due immediately.",
+      "Applause sign is ON, people!",
+      "Sponsored by absolutely no one responsible.",
+      "Your participation trophy is inbound.",
+      "This message approved by the Ministry of Boom.",
+      "I'd duck. But hey, your call.",
+      "Achievement pending: Speed Bump.",
     ],
     nuke: [
       "Mushroom season!",
@@ -38,6 +50,11 @@ const SAYINGS = {
       "Say hello to my glowing little friend.",
       "Sunscreen won't help, sweetheart.",
       "Now THAT'S what I call urban renewal.",
+      "Rated E for Everyone Evaporates.",
+      "Local forecast: brief, then extremely bright.",
+      "Your new tan is permanent.",
+      "Splitting atoms and friendships since forever.",
+      "This is why we can't have nice terrain.",
     ],
     thermo: [
       "I am become death, destroyer of terrain.",
@@ -52,6 +69,10 @@ const SAYINGS = {
       "Map? What map?",
       "I asked for the BIG one.",
       "History will call this 'a bit much.'",
+      "The map has requested early retirement.",
+      "Achievement unlocked: Geography Denier.",
+      "Please enjoy this brief second sun.",
+      "Terms and conditions apply. To everything.",
     ],
     laser: [
       "Pew pew, but professional.",
@@ -64,6 +85,9 @@ const SAYINGS = {
       "Science, bitch!",
       "Lightspeed says no take-backs.",
       "Hold still, this won't hurt long.",
+      "Death ray? DEATH RAY. It's a death ray.",
+      "The sky just picked a side. Not yours.",
+      "Beaming down customer satisfaction!",
     ],
     dirt: [
       "Special delivery: one landscape!",
@@ -77,6 +101,9 @@ const SAYINGS = {
       "Free burial. Coffin not included.",
       "Six feet under, express service!",
       "Mud bath, on the house!",
+      "Congratulations on your new basement!",
+      "Property values just dropped. Onto you.",
+      "Shovel sold separately, dumbass.",
     ],
     napalm: [
       "It's grilling season!",
@@ -90,6 +117,9 @@ const SAYINGS = {
       "You'll want aloe for this shit.",
       "Well done? Coming right up.",
       "Today's forecast: 100% arson.",
+      "Marshmallows optional. Screaming mandatory.",
+      "Now with 40% more clinging!",
+      "Fire safety tip: be somewhere else.",
     ],
     singularity: [
       "Hope you packed an event horizon.",
@@ -102,6 +132,9 @@ const SAYINGS = {
       "Escape velocity? You wish.",
       "One pocket universe, to go.",
       "Hawking would've loved this shit.",
+      "Free compaction service!",
+      "Your mass is MY mass now.",
+      "The terms of gravity are non-negotiable.",
     ],
     homing: [
       "It's not stalking, it's guidance.",
@@ -113,6 +146,9 @@ const SAYINGS = {
       "Clingy AND explosive. Your type.",
       "It never misses leg day. Or you.",
       "Swipe left all you want, it's coming.",
+      "It has your scent now.",
+      "Subscription confirmed. Unsubscribing: impossible.",
+      "Love finds a way. So do warheads.",
     ],
     rail: [
       "Wind? Never heard of her.",
@@ -123,6 +159,8 @@ const SAYINGS = {
       "Dodging requires time. You have none.",
       "Holes in the sound barrier AND your hull.",
       "Slug's in the mail. Arrived yesterday.",
+      "Time to impact: don't bother counting.",
+      "The math checks out. You won't.",
     ],
     roller: [
       "It rolls downhill. So does pain.",
@@ -133,6 +171,8 @@ const SAYINGS = {
       "Round, angry, and headed your way.",
       "No brakes on the boom wagon.",
       "Downhill from here. For you, anyway.",
+      "Momentum has entered the chat.",
+      "Trickle-down boomonomics!",
     ],
     bouncer: [
       "Bank shot!",
@@ -143,6 +183,8 @@ const SAYINGS = {
       "Boing. Boing. BOOM.",
       "Off the wall, into your face.",
       "Calculated. Mostly.",
+      "Everything's a bank shot if you believe.",
+      "Ricochet roulette — house always wins.",
     ],
     mirv: [
       "Five for the price of one!",
@@ -153,6 +195,8 @@ const SAYINGS = {
       "Family-size devastation pack.",
       "One shell, five funerals.",
       "Splitting headache, incoming.",
+      "MULTI-BALL! MULTI-BALL!",
+      "Now serving numbers one through three.",
     ],
     kinetic: [
       "Rods from the gods!",
@@ -163,6 +207,8 @@ const SAYINGS = {
       "Sky pencil. Your problem now.",
       "Gravity called dibs on your ass.",
       "Insured against meteor strikes? No? Shame.",
+      "Sky nails. Meet coffin.",
+      "Low-orbit delivery, no signature required.",
     ],
     fissure: [
       "Mind the gap!",
@@ -173,6 +219,8 @@ const SAYINGS = {
       "Crack open a cold one — the planet.",
       "Tectonic plates, meet my foot.",
       "Straight to hell — no layovers.",
+      "The floor is now optional.",
+      "Basement access granted. Violently.",
     ],
     leapfrog: [
       "Hop. Hop. BOOM.",
@@ -182,6 +230,8 @@ const SAYINGS = {
       "Hippity hoppity, your hull is my property.",
       "It does triples. You do dying.",
       "Frogs evolved. Be afraid.",
+      "Skip, skip, skip to my BOOM.",
+      "Hopscotch, but everyone loses.",
     ],
     neutron: [
       "May God have mercy. I won't.",
@@ -194,6 +244,9 @@ const SAYINGS = {
       "I am the danger. Also the fallout.",
       "Last one breathing wins. Nobody's breathing.",
       "Pulling the big lever. The BAD lever.",
+      "Everyone's invited. Nobody's leaving.",
+      "Press F for the entire map.",
+      "The cleanup crew sends their resignation.",
     ],
   },
 
@@ -211,6 +264,14 @@ const SAYINGS = {
     "Pressing FIRE makes you the villain. We just want you to know that.",
     "This will be on your permanent record. And everyone else's headstone. Go?",
     "One does not simply un-fire a Neutron Bomb. Commit?",
+    "The System has reviewed your request and finds it DELIGHTFUL. Proceed?",
+    "Warning: this exceeds the recommended daily allowance of war crimes. Fire anyway?",
+    "Your ratings will soar. Your soul, less so. Continue?",
+    "By pressing FIRE you agree to be remembered as 'the reason.' Accept?",
+    "A recent survey found 0% of bystanders support this. They won't be bystanders long. Go?",
+    "Fun fact: this exact decision has ended three civilizations. Make it four?",
+    "The odds of regret are 100%, minus your empathy score. Launch?",
+    "Achievement available: 'Scorched Everything.' Claim it?",
   ],
 
   death: [
@@ -258,6 +319,43 @@ const SAYINGS = {
     "This is fine. Everything is fine—",
     "Merge me into the void, baby.",
     "Death by hotfix. Typical.",
+    "My unsaved changes!!",
+    "git blame... all of you...",
+    "Deallocated...",
+    "Respawn timer: heat death of universe.",
+    "I never even got a loot box...",
+    "Tell my rubber duck... it was right...",
+    "Deploying to production... of the afterlife...",
+    "The cloud... I can finally see the cloud...",
+    "Leave a like and subscri—",
+    "My K/D ratio... ruined...",
+    "Cause of death: reading the comments.",
+    "I was three days from retirement... from tanking...",
+  ],
+
+  // Killer's gloat when they score a kill. Equal parts sore winner and
+  // gleeful dungeon-announcer handing out achievements nobody asked for.
+  kill: [
+    "GG. Git gud. Get grave.",
+    "Achievement unlocked: Tank You, Next!",
+    "Achievement unlocked: Overkill Enthusiast!",
+    "The crowd goes WILD!",
+    "That's going on the highlight reel!",
+    "Loot the wreck! ...Wait, it's all ash. Never mind.",
+    "+100 XP, +1 grieving family. Worth it.",
+    "Another satisfied customer! Well. Customer.",
+    "F in the chat for that guy.",
+    "The System awards you one (1) smug grin.",
+    "Beautiful form! The judges say 9.8!",
+    "Press conference at six. I regret nothing.",
+    "That was for... actually that was just fun.",
+    "Scratch one! Anybody else feeling lucky?",
+    "Somewhere, an insurance actuary just fainted.",
+    "New fans incoming! They love the violence.",
+    "Your killstreak sponsor says: keep it up, champ!",
+    "Was it something I shelled?",
+    "Boom. Roasted. Literally roasted.",
+    "And the award for Best Explosion goes to... ME.",
   ],
 };
 
@@ -268,6 +366,10 @@ function pickFireSaying(category) {
 
 function pickDeathSaying() {
   return Utils.choice(SAYINGS.death);
+}
+
+function pickKillSaying() {
+  return Utils.choice(SAYINGS.kill);
 }
 
 function pickConfirmMessage() {

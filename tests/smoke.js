@@ -250,6 +250,27 @@ vm.runInContext(`
   }
   console.log('magshield: baseline=' + hpBaseline + ' deflected=' + hpDeflected + ' ownRounds=' + hpOwnRounds);
 
+  // basic missiles must damage energy shields: shells detonate ON the dome
+  // surface (radius up to 42px), which used to sit outside the missile's
+  // splash reach (radius 24 + hull 16 = 40px), making full shields immune
+  const gsh = new Game();
+  gsh.onShop = () => gsh.nextRound();
+  gsh.newMatch({
+    players: [{ name: 'ShAtt', type: 'human' }, { name: 'ShDef', type: 'human' }],
+    rounds: 3, wrap: false, sound: false,
+  });
+  const shAtt = gsh.tanks[0], shDef = gsh.tanks[1];
+  shDef.shield = { hp: 100, max: 100 };
+  const missileDef = ItemCatalog.byId.missile;
+  const domeHit = () => gsh.applyExplosion(shDef.x, (shDef.y - 8) - shDef.hitRadius, missileDef, shAtt, { direct: shDef });
+  domeHit();
+  if (shDef.shield && shDef.shield.hp >= 100) throw new Error('basic missile did no damage to a full shield');
+  if (shDef.health < 100) throw new Error('missile leaked through a healthy shield: hp ' + shDef.health);
+  let domeHits = 1;
+  while (shDef.shield && domeHits < 30) { domeHit(); domeHits++; }
+  if (shDef.shield) throw new Error('shield never broke after ' + domeHits + ' direct missile hits');
+  console.log('shield vs missile: shield broke after ' + domeHits + ' direct dome hits, hull hp ' + shDef.health);
+
   // MIRV must split at apex into the configured number of warheads
   const gm = new Game();
   gm.onShop = () => gm.nextRound();

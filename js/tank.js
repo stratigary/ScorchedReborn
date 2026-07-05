@@ -56,6 +56,13 @@ class Tank {
 
   get radius() { return this.isBoss ? 28 : TANK_RADIUS; }
 
+  /** Shell-interception radius: the shield dome when one is up, else the hull. */
+  get hitRadius() {
+    if (!this.shield) return this.radius;
+    const scale = this.isBoss ? 1.6 : 1.0;
+    return (26 + 16 * this.shield.hp / this.shield.max) * scale;
+  }
+
   /* ---------- progression ---------- */
 
   addXP(n) {

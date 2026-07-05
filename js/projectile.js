@@ -151,8 +151,7 @@ class Projectile {
     for (const t of this.game.tanks) {
       if (!t.alive) continue;
       // shield dome intercepts at its radius
-      const scale = t.isBoss ? 1.6 : 1.0;
-      const r = t.shield ? ((26 + 16 * t.shield.hp / t.shield.max) * scale) : t.radius;
+      const r = t.hitRadius;
       const d = Utils.dist(this.x, this.y, t.x, t.y - 8);
       if (t === this.owner && !this.escapedOwner) {
         // shells spawn inside the owner's dome — wait until they leave it

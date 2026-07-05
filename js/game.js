@@ -357,7 +357,12 @@ class Game {
 
     for (const t of this.tanks) {
       if (!t.alive) continue;
-      const d = Utils.dist(x, y, t.x, t.y - 8);
+      // Shells detonate on the shield dome surface, which sits further out
+      // than the hull. Measure the blast to the dome as if it were the hull,
+      // or small weapons (missile reach 40 < full dome radius 42) could
+      // never scratch a shield.
+      const domePad = t.hitRadius - t.radius;
+      const d = Math.max(0, Utils.dist(x, y, t.x, t.y - 8) - domePad);
       const reach = r + t.radius;
       if (d > reach) continue;
       const falloff = 1 - Math.max(0, d - r * 0.3) / (reach - r * 0.3);
@@ -394,8 +399,10 @@ class Game {
     const radNear = def.radNear || 90, radFar = def.radFar || 40;
     for (const t of this.tanks) {
       if (!t.alive) continue;
-      const d = Utils.dist(x, y, t.x, t.y - 8);
-      // blast (shield-absorbable) for anyone caught in the fireball
+      const rawD = Utils.dist(x, y, t.x, t.y - 8);
+      // blast (shield-absorbable) for anyone caught in the fireball;
+      // measured to the shield dome surface, same as applyExplosion
+      const d = Math.max(0, rawD - (t.hitRadius - t.radius));
       const reach = r + t.radius;
       if (d <= reach) {
         const falloff = 1 - Math.max(0, d - r * 0.3) / (reach - r * 0.3);
@@ -405,7 +412,7 @@ class Game {
       // radiation reaches the whole map and ignores energy shields entirely.
       // The owner is shielded inside their own (sealed) firing tank.
       if (t === owner) continue;
-      const radFrac = Utils.clamp(1 - d / mapDiag, 0, 1);
+      const radFrac = Utils.clamp(1 - rawD / mapDiag, 0, 1);
       const rad = Utils.lerp(radFar, radNear, radFrac);
       if (rad > 0) this.damageTank(t, rad, owner, false, false, true /* pierceShield */);
     }
@@ -460,7 +467,14 @@ class Game {
   /** Central damage entry point: handles shields, XP, cash, kill credit. */
   damageTank(victim, amount, owner, direct = false, silent = false, pierceShield = false) {
     if (!victim.alive || amount <= 0) return 0;
+    const shieldBefore = victim.shield ? victim.shield.hp : 0;
     const actual = victim.takeDamage(amount, pierceShield);
+    const absorbed = shieldBefore - (victim.shield ? victim.shield.hp : 0);
+    if (!silent && absorbed > 0) {
+      // cyan shimmer so shield hits read as "absorbed", not "missed"
+      FX.ring(victim.x, victim.y - 10, victim.hitRadius + 6, 0.3, '#9fe8ff');
+      FX.sparkTrail(victim.x, victim.y - 12, '#7fd4ff');
+    }
     if (owner && owner !== victim) {
       victim.lastDamager = owner;
       if (actual > 0) {
@@ -486,6 +500,7 @@ class Game {
   }
 
   _checkDeaths(killer) {
+    let taunted = false; // one gloat per volley, even on a multi-kill
     for (const t of this.tanks) {
       if (!t.alive || t.health > 0) continue;
       t.alive = false;
@@ -502,6 +517,10 @@ class Game {
         credit.roundKills++;
         credit.score += 100;
         this._award(credit, 80, 3000);
+        if (credit.alive && !taunted) {
+          taunted = true;
+          FX.addBubble(credit.x, credit.y - 46, pickKillSaying(), 3.4, { follow: credit });
+        }
       }
     }
   }
