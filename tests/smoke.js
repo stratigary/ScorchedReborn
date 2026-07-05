@@ -271,6 +271,53 @@ vm.runInContext(`
   if (shDef.shield) throw new Error('shield never broke after ' + domeHits + ' direct missile hits');
   console.log('shield vs missile: shield broke after ' + domeHits + ' direct dome hits, hull hp ' + shDef.health);
 
+  // multi-kill banner, near-miss taunts, and mock achievement feats
+  const gk = new Game();
+  gk.onShop = () => gk.nextRound();
+  gk.newMatch({
+    players: [{ name: 'Ace', type: 'human' }, { name: 'V1', type: 'human' }, { name: 'V2', type: 'human' }],
+    rounds: 3, wrap: false, sound: false,
+  });
+  for (let x = 0; x < 1600; x++) gk.terrain.h[x] = 700;
+  gk.terrain.dirty = true;
+  const [ace, v1, v2] = gk.tanks;
+  ace.x = 200; v1.x = 800; v2.x = 830;
+  ace.y = v1.y = v2.y = 700;
+  v1.health = 5; v2.health = 5; v1.shield = v2.shield = null;
+  // one tacnuke (radius 60) atomizes both weakened victims -> DOUBLE KILL
+  gk.applyExplosion(815, 692, ItemCatalog.byId.tacnuke, ace, {});
+  if (v1.alive || v2.alive) throw new Error('multikill setup: victims survived');
+  if (!gk.banner || gk.banner.text.indexOf('DOUBLE KILL') < 0) {
+    throw new Error('double kill banner missing: ' + JSON.stringify(gk.banner));
+  }
+  if (!gk.banner.sub) throw new Error('multikill banner has no announcer line');
+  // self-damage feat: Ace shells his own position
+  gk.applyExplosion(ace.x, ace.y - 8, ItemCatalog.byId.missile, ace, {});
+  if (!ace._feats || !ace._feats.selfdamage) throw new Error('self-damage feat not awarded');
+  const featBubbles = FX.bubbles.length;
+  gk.applyExplosion(ace.x, ace.y - 8, ItemCatalog.byId.missile, ace, {});
+  if (FX.bubbles.length !== featBubbles) throw new Error('self-damage feat awarded twice in one round');
+  // near-miss taunt: clean miss 90px from a (revived) victim
+  v1.alive = true; v1.health = 100;
+  const origRandom = Math.random;
+  Math.random = () => 0.1; // force the taunt chance + deterministic choice
+  gk._missTaunted = false;
+  const bubblesBefore = FX.bubbles.length;
+  gk.applyExplosion(v1.x + 90, 692, ItemCatalog.byId.missile, ace, {});
+  Math.random = origRandom;
+  if (v1.health !== 100) throw new Error('near-miss test accidentally hit the tank');
+  if (FX.bubbles.length <= bubblesBefore) throw new Error('near-miss taunt bubble missing');
+  // void feat: a shot that sails off the edge of the world
+  const voider = new Projectile(ItemCatalog.byId.missile, -260, 100, -200, 0, ace, gk);
+  voider.update(1 / 60);
+  if (!voider.dead) throw new Error('off-map projectile did not die');
+  if (!ace._feats.void) throw new Error('void feat not awarded for off-map shot');
+  // self-bury feat: dirt-bombing your own head
+  gk.applyDirt(ace.x, ace.y - 10, ItemCatalog.byId.megadirt, ace);
+  if (!ace.buried) throw new Error('self-bury test: owner not buried');
+  if (!ace._feats.selfbury) throw new Error('self-bury feat not awarded');
+  console.log('multikill + feats + near-miss taunts OK');
+
   // MIRV must split at apex into the configured number of warheads
   const gm = new Game();
   gm.onShop = () => gm.nextRound();

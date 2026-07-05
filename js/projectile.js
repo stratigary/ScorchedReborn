@@ -99,6 +99,7 @@ class Projectile {
         else if (this.x >= W) this.x -= W;
       } else if (this.x < -250 || this.x > W + 250) {
         this.dead = true;
+        if (!this.isSub) g._feat(this.owner, 'void'); // sailed clean off the map
         return;
       }
       if (this.y > H + 100) { this.dead = true; return; }
@@ -208,7 +209,7 @@ class Projectile {
 
     switch (sp) {
       case 'dirt':
-        g.applyDirt(this.x, this.y, this.def);
+        g.applyDirt(this.x, this.y, this.def, this.owner);
         break;
       case 'fissure':
         g.applyFissure(this.x, this.y, this.def, this.owner);

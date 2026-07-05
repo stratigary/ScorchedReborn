@@ -7,6 +7,7 @@
 
   const game = new Game();
   const shop = new ShopUI();
+  window.game = game; // console/debug access
 
   const elMenu = document.getElementById('menu');
   const elPause = document.getElementById('pause');

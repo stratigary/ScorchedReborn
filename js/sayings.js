@@ -357,6 +357,60 @@ const SAYINGS = {
     "Boom. Roasted. Literally roasted.",
     "And the award for Best Explosion goes to... ME.",
   ],
+
+  // Center-screen announcer subtitle under DOUBLE KILL! / TRIPLE KILL! banners.
+  multikill: [
+    "The sponsors are THRILLED.",
+    "Viewership is SPIKING.",
+    "The System is legally required to applaud.",
+    "Somebody alert the highlights desk!",
+    "Merchandising opportunities detected.",
+    "That'll look great in slow motion.",
+    "The remaining tanks would like to go home now.",
+    "Efficiency like that deserves a raise. Request denied, but still.",
+    "New personal best in property damage!",
+    "The commentators have run out of adjectives.",
+  ],
+
+  // Shouted by a tank that just survived a clean miss nearby.
+  nearmiss: [
+    "Missed me!",
+    "You call that artillery?!",
+    "I felt the BREEZE on that one!",
+    "Swing and a miss, sweetheart!",
+    "The dirt thanks you for your donation.",
+    "Nice warning shot!",
+    "0/10. Would not dodge again.",
+    "My grandma aims better, and she's a toaster!",
+    "That landed in a different zip code!",
+    "Were you aiming with your elbows?",
+    "So close! Kidding. Not close.",
+    "Air superiority achieved — by the air.",
+    "My insurance premiums went up and that's ALL that happened.",
+    "Reload and reflect on your choices.",
+  ],
+
+  // Mock achievements for dubious feats, once per feat per round.
+  feats: {
+    selfdamage: [
+      "🏆 Achievement: Friendly Fire (With Yourself)",
+      "🏆 Achievement: Double Agent",
+      "🏆 Achievement: Ow. That One's On You.",
+      "🏆 Achievement: Shortest Supply Line",
+    ],
+    selfbury: [
+      "🏆 Achievement: Self-Storage",
+      "🏆 Achievement: Pre-Dug Grave. Efficient!",
+      "🏆 Achievement: Landscaping, Interior Edition",
+      "🏆 Achievement: Ostrich Protocol Engaged",
+    ],
+    void: [
+      "🏆 Achievement: Fired Into The Void",
+      "🏆 Achievement: Astronomy Donor",
+      "🏆 Achievement: Warning Shot (For Nobody)",
+      "🏆 Achievement: The Map Is That Way",
+    ],
+  },
 };
 
 function pickFireSaying(category) {
@@ -370,6 +424,18 @@ function pickDeathSaying() {
 
 function pickKillSaying() {
   return Utils.choice(SAYINGS.kill);
+}
+
+function pickMultiKillLine() {
+  return Utils.choice(SAYINGS.multikill);
+}
+
+function pickNearMissSaying() {
+  return Utils.choice(SAYINGS.nearmiss);
+}
+
+function pickFeatSaying(kind) {
+  return Utils.choice(SAYINGS.feats[kind] || SAYINGS.feats.void);
 }
 
 function pickConfirmMessage() {

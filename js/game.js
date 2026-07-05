@@ -28,6 +28,8 @@ class Game {
     this._vignette = this._buildVignette();
     this._pendingShooter = null;
     this.awaitingConfirm = false;
+    this._turnKills = new Map();   // killer -> kills this volley (multi-kill banner)
+    this._missTaunted = false;     // one near-miss taunt per volley
 
     // callbacks wired up by main.js
     this.onShop = null;
@@ -131,6 +133,7 @@ class Game {
       t.vy = 0; t.falling = false; t.buried = false; t.chuteActive = false;
       t.angle = t.x < W / 2 ? 60 : 120;
       t.roundDamage = 0; t.roundKills = 0;
+      t._feats = {}; // mock achievements re-earnable each round
       // fuel: one super fuel pack consumed per round
       t.fuel = 100;
       if (t.ammo('superfuel') > 0) { t.consumeAmmo('superfuel'); t.fuel += 100; }
@@ -294,6 +297,8 @@ class Game {
     this.phase = 'sim';
     this.settleTimer = 0;
     this.terrainWait = 0;
+    this._turnKills = new Map();
+    this._missTaunted = false;
 
     AudioEngine.launch(tank.x);
     const m = tank.muzzle();
@@ -355,6 +360,7 @@ class Game {
       }
     }
 
+    let anyHit = false;
     for (const t of this.tanks) {
       if (!t.alive) continue;
       // Shells detonate on the shield dome surface, which sits further out
@@ -365,10 +371,24 @@ class Game {
       const d = Math.max(0, Utils.dist(x, y, t.x, t.y - 8) - domePad);
       const reach = r + t.radius;
       if (d > reach) continue;
+      anyHit = true;
       const falloff = 1 - Math.max(0, d - r * 0.3) / (reach - r * 0.3);
       const dmg = (def.dmg || 0) * Utils.clamp(falloff, 0.08, 1);
       const isDirect = (direct === t) || d < r * 0.35;
       if (dmg > 0) this.damageTank(t, dmg, owner, isDirect);
+    }
+    // a clean miss that lands near somebody earns the shooter some lip
+    if (!anyHit && owner && (def.dmg || 0) > 0 && !this._missTaunted) {
+      let closest = null, cd = 1e9;
+      for (const t of this.tanks) {
+        if (!t.alive || t === owner) continue;
+        const d = Utils.dist(x, y, t.x, t.y - 8);
+        if (d < cd) { cd = d; closest = t; }
+      }
+      if (closest && cd < r + 110 && Math.random() < 0.55) {
+        this._missTaunted = true;
+        FX.addBubble(closest.x, closest.y - 46, pickNearMissSaying(), 2.6, { follow: closest });
+      }
     }
     this._checkDeaths(owner);
   }
@@ -419,12 +439,14 @@ class Game {
     this._checkDeaths(owner);
   }
 
-  applyDirt(x, y, def) {
+  applyDirt(x, y, def, owner = null) {
+    const wasBuried = owner ? owner.buried : true;
     this.terrain.mound(x, def.radius);
     FX.dirtBurst(x, y, def.radius, this.theme.soilTop);
     AudioEngine.explosion(x, 0.25);
     FX.addShake(4);
     for (const t of this.tanks) if (t.alive) t._updateBuried(this.terrain);
+    if (owner && owner.alive && owner.buried && !wasBuried) this._feat(owner, 'selfbury');
   }
 
   applyFissure(x, y, def, owner) {
@@ -475,6 +497,7 @@ class Game {
       FX.ring(victim.x, victim.y - 10, victim.hitRadius + 6, 0.3, '#9fe8ff');
       FX.sparkTrail(victim.x, victim.y - 12, '#7fd4ff');
     }
+    if (owner === victim && (actual > 0 || absorbed > 0)) this._feat(victim, 'selfdamage');
     if (owner && owner !== victim) {
       victim.lastDamager = owner;
       if (actual > 0) {
@@ -486,6 +509,25 @@ class Game {
     }
     if (!silent && actual > 0) FX.sparkTrail(victim.x, victim.y - 12, '#ff7070');
     return actual;
+  }
+
+  /** Announcer banner when one volley claims several tanks. */
+  _announceMultiKill(killer, n) {
+    const label = n === 2 ? 'DOUBLE KILL!' : n === 3 ? 'TRIPLE KILL!'
+      : n === 4 ? 'QUAD KILL!' : 'TOTAL ANNIHILATION!';
+    this.banner = { text: `${killer.name}: ${label}`, sub: pickMultiKillLine(), timer: 2.2 };
+    AudioEngine.levelUp();
+  }
+
+  /** Mock achievement toast for a dubious feat, once per feat kind per round. */
+  _feat(tank, kind) {
+    if (!tank) return;
+    if (!tank._feats) tank._feats = {};
+    if (tank._feats[kind]) return;
+    tank._feats[kind] = true;
+    FX.addBubble(tank.x, tank.y - 60, pickFeatSaying(kind), 3.4,
+      { color: '#ffd54f', follow: tank.alive ? tank : null });
+    AudioEngine.click();
   }
 
   _award(tank, xp, cash) {
@@ -521,6 +563,9 @@ class Game {
           taunted = true;
           FX.addBubble(credit.x, credit.y - 46, pickKillSaying(), 3.4, { follow: credit });
         }
+        const streak = (this._turnKills.get(credit) || 0) + 1;
+        this._turnKills.set(credit, streak);
+        if (streak >= 2) this._announceMultiKill(credit, streak);
       }
     }
   }
