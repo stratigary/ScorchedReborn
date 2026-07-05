@@ -605,14 +605,19 @@ vm.runInContext(`
     console.log('teams: alternating assignment + no friendly-fire payout + win condition OK');
   }
 
-  // Interest: 5% of cash on hand is added at round end
+  // Interest: exactly 5% of cash on hand is added at round end, on top of
+  // (and independent from) the survival/winner cash awards
   {
     const g = flatGame([{ name: 'I1', type: 'human' }, { name: 'I2', type: 'human' }]);
     g.tanks[0].cash = 10000; g.tanks[1].alive = false;
     const before = g.tanks[0].cash;
     g.checkRoundEnd();
-    if (g.tanks[0].cash < before + 490) throw new Error('interest not applied: ' + before + '->' + g.tanks[0].cash);
-    console.log('interest: ' + before + ' -> ' + g.tanks[0].cash + ' OK');
+    // winner gets: 5% interest (500) + survival award (2000) + winner award (2500)
+    const expected = before + Math.round(before * 0.05) + 2000 + 2500;
+    if (g.tanks[0].cash !== expected) {
+      throw new Error('interest math off: expected ' + expected + ', got ' + g.tanks[0].cash);
+    }
+    console.log('interest: ' + before + ' -> ' + g.tanks[0].cash + ' (exact) OK');
   }
 
   // Volcanic eruptions: the volcano theme flags ambient lava spouts

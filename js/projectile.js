@@ -673,7 +673,7 @@ class Decoy {
     this.owner = owner;
     this.x = Utils.clamp(x, 20, W - 20);
     this.y = game.terrain.heightAt(this.x);
-    this.hp = 40;
+    this.hp = 22; // inflatable — pops on almost any solid direct hit, survives a graze
     this.dead = false;
     this.wobble = Math.random() * TAU;
   }
