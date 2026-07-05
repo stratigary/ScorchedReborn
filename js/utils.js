@@ -1,6 +1,8 @@
 'use strict';
 /* ===== Global constants & helpers ===== */
 
+const GAME_VERSION = 'v1.1.0'; // shown under the menu title; bump on release
+
 const W = 1600;            // world / canvas width
 const H = 900;             // world / canvas height
 const BEDROCK_Y = H - 36;  // indestructible bedrock line

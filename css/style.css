@@ -58,6 +58,7 @@ html, body {
   text-shadow: 0 0 18px rgba(255, 120, 40, 0.9), 0 0 40px rgba(255, 60, 20, 0.5);
 }
 .title-accent { color: var(--neon); text-shadow: 0 0 18px rgba(57,255,106,0.9); }
+.version { margin-top: 2px; color: #55688a; font-size: 11px; letter-spacing: 3px; }
 .tagline { margin: 8px 0 22px; color: #7d93b8; font-size: 13px; letter-spacing: 2px; }
 
 #player-slots { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }

@@ -8,6 +8,7 @@
   const game = new Game();
   const shop = new ShopUI();
   window.game = game; // console/debug access
+  document.getElementById('game-version').textContent = GAME_VERSION;
 
   const elMenu = document.getElementById('menu');
   const elPause = document.getElementById('pause');
